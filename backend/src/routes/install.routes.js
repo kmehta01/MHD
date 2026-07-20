@@ -7,8 +7,17 @@ const {
 } = require("../controllers/install.controller");
 
 const checkInstallation = require("../middlewares/install.middleware");
+const {
+  installerSetupLimiter,
+  installerStatusLimiter,
+} = require("../middlewares/rate-limit.middleware");
 
-router.get("/status", checkInstallerStatus);
-router.post("/setup", checkInstallation, runInstallation);
+router.get("/status", installerStatusLimiter, checkInstallerStatus);
+router.post(
+  "/setup",
+  installerSetupLimiter,
+  checkInstallation,
+  runInstallation,
+);
 
 module.exports = router;

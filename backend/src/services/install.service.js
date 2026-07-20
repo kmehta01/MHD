@@ -214,8 +214,15 @@ const normalizeConfig = (input = {}) => {
     );
   }
 
-  if (config.jwt_secret.length < 16) {
-    throw new InstallerError("JWT secret must be at least 16 characters long");
+  if (
+    config.jwt_secret.length < 32 ||
+    /(?:change|example|replace|sample|test)[-_ ]*(?:me|this|secret|value)?/i.test(
+      config.jwt_secret,
+    )
+  ) {
+    throw new InstallerError(
+      "JWT secret must be a unique, non-placeholder value of at least 32 characters",
+    );
   }
 
   if (config.two_factor_pepper.length < 32) {

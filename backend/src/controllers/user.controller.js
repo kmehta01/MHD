@@ -60,12 +60,30 @@ const createUser = async (req, res) => {
       phone,
       password,
       status,
-    } = req.body;
+    } = req.body || {};
 
-    if (!role_id || !name || !email || !password) {
+    if (
+      !role_id ||
+      typeof name !== "string" ||
+      !name.trim() ||
+      typeof email !== "string" ||
+      !email.trim() ||
+      typeof password !== "string" ||
+      !password
+    ) {
       return res.status(400).json({
         status: false,
         message: "Role, name, email and password are required",
+      });
+    }
+
+    if (
+      (phone !== undefined && phone !== null && typeof phone !== "string") ||
+      (status !== undefined && typeof status !== "string")
+    ) {
+      return res.status(400).json({
+        status: false,
+        message: "Name, email, phone, password and status must be strings",
       });
     }
 
@@ -256,9 +274,9 @@ const updateUser = async (req, res) => {
 const updateUserPassword = async (req, res) => {
   try {
     const { id } = req.params;
-    const { password } = req.body;
+    const password = req.body?.password;
 
-    if (!password || password.length < 8) {
+    if (typeof password !== "string" || password.length < 8) {
       return res.status(400).json({
         status: false,
         message: "Password must be at least 8 characters long",

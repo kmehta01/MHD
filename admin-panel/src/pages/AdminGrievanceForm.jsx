@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import Icon from "../components/Icon";
@@ -11,11 +11,29 @@ const today = () => {
     .slice(0, 10);
 };
 
+const normalizeComplaintReference = (reference) => {
+  const normalizedReference = String(reference || "")
+    .trim()
+    .toUpperCase();
+
+  return /^[A-Z0-9]{1,8}-\d{4}-(?:0[1-9]|1[0-2])-\d{4,}$/.test(
+    normalizedReference,
+  )
+    ? normalizedReference
+    : "";
+};
+
 const buildTrackingUrl = (reference) => {
   const baseUrl =
     import.meta.env.VITE_PUBLIC_SITE_URL || "http://localhost:5173";
+  const normalizedReference = normalizeComplaintReference(reference);
   const url = new URL("/submit-complaint", baseUrl);
-  url.searchParams.set("ref", reference);
+
+  if (!normalizedReference || !["http:", "https:"].includes(url.protocol)) {
+    throw new TypeError("Invalid grievance tracking URL");
+  }
+
+  url.searchParams.set("ref", normalizedReference);
   url.hash = "track-grievance";
   return url.toString();
 };
@@ -121,28 +139,37 @@ const AdminGrievanceForm = () => {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
-  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
+  const qrCanvasRef = useRef(null);
   const anonymous = form.submission_type === "anonymous";
 
   useEffect(() => {
-    if (!confirmation?.tokenNumber) return undefined;
+    if (!confirmation?.tokenNumber || !qrCanvasRef.current) return undefined;
 
     let active = true;
-    QRCode.toDataURL(buildTrackingUrl(confirmation.tokenNumber), {
-      color: { dark: "#08213f", light: "#ffffff" },
-      errorCorrectionLevel: "H",
-      margin: 1,
-      width: 190,
-    })
-      .then((dataUrl) => {
+    setQrCodeReady(false);
+    Promise.resolve()
+      .then(() =>
+        QRCode.toCanvas(
+          qrCanvasRef.current,
+          buildTrackingUrl(confirmation.tokenNumber),
+          {
+            color: { dark: "#08213f", light: "#ffffff" },
+            errorCorrectionLevel: "H",
+            margin: 1,
+            width: 190,
+          },
+        ),
+      )
+      .then(() => {
         if (!active) return;
-        setQrCodeUrl(dataUrl);
+        setQrCodeReady(true);
         setQrCodeError("");
       })
       .catch(() => {
         if (!active) return;
-        setQrCodeUrl("");
+        setQrCodeReady(false);
         setQrCodeError("The tracking QR code could not be generated.");
       });
 
@@ -303,11 +330,15 @@ const AdminGrievanceForm = () => {
           </div>
           <div className="admin-grievance-qr-card">
             <div className="admin-grievance-qr-image">
-              {qrCodeUrl ? (
-                <img alt={`Tracking QR code for ${confirmation.tokenNumber}`} src={qrCodeUrl} />
-              ) : (
+              <canvas
+                aria-label={`Tracking QR code for ${confirmation.tokenNumber}`}
+                hidden={!qrCodeReady}
+                ref={qrCanvasRef}
+                role="img"
+              ></canvas>
+              {!qrCodeReady ? (
                 <span>{qrCodeError || "Generating QR code..."}</span>
-              )}
+              ) : null}
             </div>
             <div>
               <h2>Scan to track the grievance</h2>
@@ -325,7 +356,7 @@ const AdminGrievanceForm = () => {
             <p>The grievance will be reviewed and routed to the appropriate team. Named complainants may receive follow-up using their selected contact method.</p>
           </div>
           <div className="admin-grievance-success-actions">
-            <button className="button button-secondary" onClick={() => { setForm(initialForm(adminUser?.name || "")); setFiles([]); setStep(1); setConfirmation(null); setQrCodeUrl(""); setQrCodeError(""); }} type="button">
+            <button className="button button-secondary" onClick={() => { setForm(initialForm(adminUser?.name || "")); setFiles([]); setStep(1); setConfirmation(null); setQrCodeReady(false); setQrCodeError(""); }} type="button">
               <Icon name="plus" size={16} /> Create another
             </button>
             <button className="button button-primary" onClick={() => navigate("/grievances/new")} type="button">

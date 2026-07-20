@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../config/jwt");
 const { isTwoFactorEnforced } = require("../config/two-factor");
 const AuthModel = require("../models/auth.model");
 
@@ -15,7 +16,9 @@ const verifyToken = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+    });
 
     if (isTwoFactorEnforced() && decoded.two_factor_verified !== true) {
       return res.status(401).json({

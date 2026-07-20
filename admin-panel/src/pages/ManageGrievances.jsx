@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import API from "../services/api";
+import { downloadBlob } from "../utils/download";
 
 const statuses = [
   "New",
@@ -280,14 +281,11 @@ const ManageGrievances = () => {
         `/complaints/${selectedComplaint.id}/attachments/${attachment.id}/download`,
         { responseType: "blob" },
       );
-      const url = window.URL.createObjectURL(response.data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = getFilename(response.headers, attachment.originalName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      downloadBlob(
+        response.data,
+        getFilename(response.headers, attachment.originalName),
+        "grievance-attachment",
+      );
     } catch (requestError) {
       setError(requestError.response?.data?.message || "Failed to download attachment");
     } finally {

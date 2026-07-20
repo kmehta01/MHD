@@ -3,6 +3,10 @@ const path = require("path");
 const ComplaintModel = require("../models/complaint.model");
 const { PRIORITIES, STATUSES } = require("../config/complaint-options");
 const { getGrievanceScope } = require("../utils/access-scope");
+const {
+  getOptionalInteger,
+  getOptionalString,
+} = require("../utils/request-validation");
 
 const backendRoot = path.resolve(__dirname, "../..");
 const ISSUE_LABELS = {
@@ -142,11 +146,13 @@ const normalizeComplaintDetail = (complaint) => ({
 });
 
 const getFilters = (query) => {
-  const search = String(query.search || "").trim().slice(0, 100);
-  const status = String(query.status || "").trim();
-  const priority = String(query.priority || "").trim();
-  const assignment = String(query.assignment || "").trim();
-  const deadline = String(query.deadline || "").trim();
+  const search = getOptionalString(query, "search", { maxLength: 100 });
+  const status = getOptionalString(query, "status", { maxLength: 40 });
+  const priority = getOptionalString(query, "priority", { maxLength: 20 });
+  const assignment = getOptionalString(query, "assignment", {
+    maxLength: 20,
+  });
+  const deadline = getOptionalString(query, "deadline", { maxLength: 20 });
 
   if (status && !STATUSES.includes(status)) {
     const error = new Error("Invalid status filter");
@@ -207,8 +213,11 @@ const getComplaints = async (req, res) => {
     }
 
     const result = await ComplaintModel.findAll(getFilters(req.query), {
-      page: req.query.page,
-      perPage: req.query.per_page,
+      page: getOptionalInteger(req.query, "page", { defaultValue: 1 }),
+      perPage: getOptionalInteger(req.query, "per_page", {
+        defaultValue: 25,
+        maximum: 100,
+      }),
       scope,
     });
 
@@ -241,8 +250,14 @@ const getComplaintNotifications = async (req, res) => {
     }
 
     const result = await ComplaintModel.findNotifications({
-      afterId: req.query.after_id,
-      limit: req.query.limit,
+      afterId: getOptionalInteger(req.query, "after_id", {
+        allowZero: true,
+        defaultValue: 0,
+      }),
+      limit: getOptionalInteger(req.query, "limit", {
+        defaultValue: 5,
+        maximum: 10,
+      }),
       scope,
     });
 
@@ -253,10 +268,15 @@ const getComplaintNotifications = async (req, res) => {
       latest_id: result.latestId,
     });
   } catch (error) {
-    return res.status(500).json({
+    return res.status(error.statusCode || 500).json({
       status: false,
-      message: "Failed to fetch grievance notifications",
-      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+      message: error.statusCode
+        ? error.message
+        : "Failed to fetch grievance notifications",
+      error:
+        process.env.NODE_ENV === "development" && !error.statusCode
+          ? error.message
+          : undefined,
     });
   }
 };

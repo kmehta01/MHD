@@ -5246,7 +5246,7 @@ textarea {
   width: 176px;
 }
 
-.grievance-receipt__qr img {
+.grievance-receipt__qr canvas {
   display: block;
   height: auto;
   max-width: 100%;

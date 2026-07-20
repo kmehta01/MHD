@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const { getJwtSecret } = require("../config/jwt");
 const AuthModel = require("../models/auth.model");
 const TwoFactorModel = require("../models/two-factor.model");
 const {
@@ -100,8 +101,9 @@ const createSession = async (user, twoFactorVerified) => {
       permissions: userPermissions,
       two_factor_verified: twoFactorVerified,
     },
-    process.env.JWT_SECRET,
+    getJwtSecret(),
     {
+      algorithm: "HS256",
       expiresIn: process.env.JWT_EXPIRES_IN || "1d",
     },
   );

@@ -2,6 +2,11 @@ const { UAParser } = require("ua-parser-js");
 const AuditLogModel = require("../models/audit-log.model");
 const { recordAuditEvent } = require("../services/audit-log.service");
 const { getAuditScope } = require("../utils/access-scope");
+const {
+  getOptionalInteger,
+  getOptionalString,
+  requestValidationError,
+} = require("../utils/request-validation");
 
 const ACTIONS = new Set(["login", "security", "create", "update", "delete", "export"]);
 const BELIZE_OFFSET_HOURS = 6;
@@ -30,21 +35,29 @@ const parseDate = (value, exclusiveEnd = false) => {
 };
 
 const getFilters = (query) => {
-  const search = String(query.search || "").trim().slice(0, 100);
-  const action = String(query.action || "").trim().toLowerCase();
-  const userId = query.user_id ? Number(query.user_id) : null;
-  const dateFrom = parseDate(query.date_from);
-  const dateTo = parseDate(query.date_to, true);
+  const search = getOptionalString(query, "search", { maxLength: 100 });
+  const action = getOptionalString(query, "action", {
+    lowercase: true,
+    maxLength: 20,
+  });
+  const userId = getOptionalInteger(query, "user_id");
+  const dateFromValue = getOptionalString(query, "date_from", {
+    maxLength: 10,
+  });
+  const dateToValue = getOptionalString(query, "date_to", { maxLength: 10 });
+  const dateFrom = parseDate(dateFromValue);
+  const dateTo = parseDate(dateToValue, true);
 
-  if (action && !ACTIONS.has(action)) throw new Error("Invalid action filter");
-  if (query.user_id && (!Number.isInteger(userId) || userId <= 0)) {
-    throw new Error("Invalid user filter");
+  if (action && !ACTIONS.has(action)) {
+    throw requestValidationError("Invalid action filter");
   }
   if (dateFrom === undefined || dateTo === undefined) {
-    throw new Error("Dates must use YYYY-MM-DD format");
+    throw requestValidationError("Dates must use YYYY-MM-DD format");
   }
   if (dateFrom && dateTo && dateFrom >= dateTo) {
-    throw new Error("The start date must be before or equal to the end date");
+    throw requestValidationError(
+      "The start date must be before or equal to the end date",
+    );
   }
 
   return { search, action: action || null, userId, dateFrom, dateTo };
@@ -98,8 +111,11 @@ const getAuditLogs = async (req, res) => {
       ...getFilters(req.query),
       scope: getAuditScope(req.user),
     };
-    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
-    const perPage = Math.min(100, Math.max(1, Number.parseInt(req.query.per_page, 10) || 25));
+    const page = getOptionalInteger(req.query, "page", { defaultValue: 1 });
+    const perPage = getOptionalInteger(req.query, "per_page", {
+      defaultValue: 25,
+      maximum: 100,
+    });
     const { rows, total } = await AuditLogModel.findAll(filters, {
       limit: perPage,
       offset: (page - 1) * perPage,
@@ -116,7 +132,7 @@ const getAuditLogs = async (req, res) => {
       },
     });
   } catch (error) {
-    const clientError = error.message.startsWith("Invalid") || error.message.startsWith("Dates") || error.message.startsWith("The start");
+    const clientError = error.statusCode === 400;
     return res.status(clientError ? 400 : 500).json({
       status: false,
       message: clientError ? error.message : "Failed to fetch audit logs",
@@ -170,7 +186,7 @@ const exportAuditLogs = async (req, res) => {
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.send(`\uFEFF${lines.join("\r\n")}`);
   } catch (error) {
-    const clientError = error.message.startsWith("Invalid") || error.message.startsWith("Dates") || error.message.startsWith("The start");
+    const clientError = error.statusCode === 400;
     return res.status(clientError ? 400 : 500).json({
       status: false,
       message: clientError ? error.message : "Failed to export audit logs",

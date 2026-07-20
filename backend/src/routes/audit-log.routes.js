@@ -9,6 +9,9 @@ const {
   getAuditActors,
   getAuditLogs,
 } = require("../controllers/audit-log.controller");
+const {
+  auditExportLimiter,
+} = require("../middlewares/rate-limit.middleware");
 
 const router = express.Router();
 
@@ -19,7 +22,12 @@ const canViewAuditLogs = checkAnyPermission([
 ]);
 
 router.use(verifyToken);
-router.get("/export", checkPermission("audit_logs.export"), exportAuditLogs);
+router.get(
+  "/export",
+  checkPermission("audit_logs.export"),
+  auditExportLimiter,
+  exportAuditLogs,
+);
 router.get("/actors", canViewAuditLogs, getAuditActors);
 router.get("/", canViewAuditLogs, getAuditLogs);
 

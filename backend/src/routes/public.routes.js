@@ -6,9 +6,22 @@ const {
   getComplaintStatus,
   submitComplaint,
 } = require("../controllers/public-complaint.controller");
+const {
+  complaintStatusLookupLimiter,
+  publicComplaintSubmissionLimiter,
+} = require("../middlewares/rate-limit.middleware");
 
 const router = express.Router();
-router.post("/complaints", handleComplaintUpload, submitComplaint);
-router.post("/complaints/status", getComplaintStatus);
+router.post(
+  "/complaints",
+  publicComplaintSubmissionLimiter,
+  handleComplaintUpload,
+  submitComplaint,
+);
+router.post(
+  "/complaints/status",
+  complaintStatusLookupLimiter,
+  getComplaintStatus,
+);
 
 module.exports = router;

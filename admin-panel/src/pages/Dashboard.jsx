@@ -397,7 +397,6 @@ const Dashboard = () => {
   const hasVisibleCharts = Object.keys(charts).length > 0;
   const hasVisibleWidgets =
     visibleOverviewCards.length > 0 || hasVisibleCharts;
-  const firstName = adminUser?.name?.split(" ")[0] || "Administrator";
   const scopeLabel =
     meta.scope === "department"
       ? adminUser?.department_name || "Your department"

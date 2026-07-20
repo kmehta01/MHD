@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Icon from "../components/Icon";
 import API from "../services/api";
+import { downloadBlob } from "../utils/download";
 import { hasPermission } from "../utils/permissions";
 
 const actionOptions = [
@@ -39,7 +40,11 @@ const AuditLogs = () => {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [page, setPage] = useState(1);
-  const [pagination, setPagination] = useState({ page: 1, total: 0, total_pages: 1 });
+  const [pagination, setPagination] = useState({
+    page: 1,
+    total: 0,
+    total_pages: 1,
+  });
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
@@ -88,12 +93,16 @@ const AuditLogs = () => {
       .then((response) => {
         if (!active) return;
         setLogs(response.data.data || []);
-        setPagination(response.data.pagination || { page: 1, total: 0, total_pages: 1 });
+        setPagination(
+          response.data.pagination || { page: 1, total: 0, total_pages: 1 },
+        );
       })
       .catch((requestError) => {
         if (!active) return;
         setLogs([]);
-        setError(requestError.response?.data?.message || "Failed to load audit logs");
+        setError(
+          requestError.response?.data?.message || "Failed to load audit logs",
+        );
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -140,15 +149,9 @@ const AuditLogs = () => {
         responseType: "blob",
       });
       const disposition = response.headers["content-disposition"] || "";
-      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] || "audit-logs.csv";
-      const url = window.URL.createObjectURL(response.data);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      const filename =
+        disposition.match(/filename="?([^";]+)"?/i)?.[1] || "audit-logs.csv";
+      downloadBlob(response.data, filename, "audit-logs.csv");
     } catch {
       setError("Failed to export audit logs");
     } finally {
@@ -162,11 +165,20 @@ const AuditLogs = () => {
         <div>
           <span className="eyebrow">Security oversight</span>
           <h1>Audit Logs</h1>
-          <p>Review administrator activity and authentication events. Times are shown in Belize time.</p>
+          <p>
+            Review administrator activity and authentication events. Times are
+            shown in Belize time.
+          </p>
         </div>
         {canExport ? (
-          <button className="button button-primary" disabled={exporting} onClick={exportCsv} type="button">
-            <Icon name="download" size={17} /> {exporting ? "Exporting..." : "Export CSV"}
+          <button
+            className="button button-primary"
+            disabled={exporting}
+            onClick={exportCsv}
+            type="button"
+          >
+            <Icon name="download" size={17} />{" "}
+            {exporting ? "Exporting..." : "Export CSV"}
           </button>
         ) : null}
       </div>
@@ -188,7 +200,11 @@ const AuditLogs = () => {
           <label>
             <span>Action</span>
             <select onChange={updateFilter(setAction)} value={action}>
-              {actionOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              {actionOptions.map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </label>
 
@@ -197,25 +213,41 @@ const AuditLogs = () => {
             <select onChange={updateFilter(setUserId)} value={userId}>
               <option value="">All users</option>
               {actors.map((actor) => (
-                <option key={actor.id} value={actor.id}>{actor.name} (#{actor.id})</option>
+                <option key={actor.id} value={actor.id}>
+                  {actor.name} (#{actor.id})
+                </option>
               ))}
             </select>
           </label>
 
           <label>
             <span>From</span>
-            <input onChange={updateFilter(setDateFrom)} type="date" value={dateFrom} />
+            <input
+              onChange={updateFilter(setDateFrom)}
+              type="date"
+              value={dateFrom}
+            />
           </label>
 
           <label>
             <span>To</span>
-            <input onChange={updateFilter(setDateTo)} type="date" value={dateTo} />
+            <input
+              onChange={updateFilter(setDateTo)}
+              type="date"
+              value={dateTo}
+            />
           </label>
 
-          <button className="audit-clear" onClick={clearFilters} type="button">Clear</button>
+          <button className="audit-clear" onClick={clearFilters} type="button">
+            Clear
+          </button>
         </div>
 
-        {error ? <div className="audit-error" role="alert">{error}</div> : null}
+        {error ? (
+          <div className="audit-error" role="alert">
+            {error}
+          </div>
+        ) : null}
 
         <div className="audit-table-wrap">
           <table className="audit-table">
@@ -232,30 +264,70 @@ const AuditLogs = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="audit-status" colSpan="7">Loading audit logs...</td></tr>
-              ) : logs.length === 0 ? (
-                <tr><td className="audit-status" colSpan="7">No audit events match these filters.</td></tr>
-              ) : logs.map((log) => (
-                <tr key={log.id}>
-                  <td className="audit-message">{log.message}</td>
-                  <td>{log.actor ? `${log.actor.name || "Unknown"}${log.actor.id ? ` (#${log.actor.id})` : ""}` : "Unknown"}</td>
-                  <td className="audit-nowrap">{log.ip_address || "Unknown"}</td>
-                  <td><span className={`audit-action audit-action-${log.action}`}>{log.action}</span></td>
-                  <td>{log.platform}</td>
-                  <td>{log.agent}</td>
-                  <td className="audit-nowrap">{formatBelizeDate(log.created_at)}</td>
+                <tr>
+                  <td className="audit-status" colSpan="7">
+                    Loading audit logs...
+                  </td>
                 </tr>
-              ))}
+              ) : logs.length === 0 ? (
+                <tr>
+                  <td className="audit-status" colSpan="7">
+                    No audit events match these filters.
+                  </td>
+                </tr>
+              ) : (
+                logs.map((log) => (
+                  <tr key={log.id}>
+                    <td className="audit-message">{log.message}</td>
+                    <td>
+                      {log.actor
+                        ? `${log.actor.name || "Unknown"}${log.actor.id ? ` (#${log.actor.id})` : ""}`
+                        : "Unknown"}
+                    </td>
+                    <td className="audit-nowrap">
+                      {log.ip_address || "Unknown"}
+                    </td>
+                    <td>
+                      <span
+                        className={`audit-action audit-action-${log.action}`}
+                      >
+                        {log.action}
+                      </span>
+                    </td>
+                    <td>{log.platform}</td>
+                    <td>{log.agent}</td>
+                    <td className="audit-nowrap">
+                      {formatBelizeDate(log.created_at)}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
 
         <div className="audit-pagination">
-          <span>{pagination.total} event{pagination.total === 1 ? "" : "s"}</span>
+          <span>
+            {pagination.total} event{pagination.total === 1 ? "" : "s"}
+          </span>
           <div>
-            <button disabled={loading || page <= 1} onClick={() => changePage(page - 1)} type="button">Previous</button>
-            <span>Page {pagination.page} of {pagination.total_pages}</span>
-            <button disabled={loading || page >= pagination.total_pages} onClick={() => changePage(page + 1)} type="button">Next</button>
+            <button
+              disabled={loading || page <= 1}
+              onClick={() => changePage(page - 1)}
+              type="button"
+            >
+              Previous
+            </button>
+            <span>
+              Page {pagination.page} of {pagination.total_pages}
+            </span>
+            <button
+              disabled={loading || page >= pagination.total_pages}
+              onClick={() => changePage(page + 1)}
+              type="button"
+            >
+              Next
+            </button>
           </div>
         </div>
       </section>

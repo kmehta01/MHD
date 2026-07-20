@@ -780,7 +780,7 @@
   text-align: center;
 }
 
-.admin-grievance-qr-image img {
+.admin-grievance-qr-image canvas {
   width: 100%;
   height: 100%;
   object-fit: contain;

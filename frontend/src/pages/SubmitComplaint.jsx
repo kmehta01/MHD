@@ -187,7 +187,7 @@ function SubmitComplaint() {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState(null);
-  const [qrCodeUrl, setQrCodeUrl] = useState("");
+  const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
   const [statusLookup, setStatusLookup] = useState({
     tokenNumber: normalizeComplaintReference(
@@ -198,6 +198,7 @@ function SubmitComplaint() {
   const [statusResult, setStatusResult] = useState(null);
   const [statusError, setStatusError] = useState("");
   const [statusLoading, setStatusLoading] = useState(false);
+  const qrCanvasRef = useRef(null);
   const wizardRef = useRef(null);
 
   const isAnonymous = form.submission_type === "anonymous";
@@ -211,14 +212,15 @@ function SubmitComplaint() {
   );
 
   useEffect(() => {
-    if (!confirmation?.tokenNumber) {
+    if (!confirmation?.tokenNumber || !qrCanvasRef.current) {
       return undefined;
     }
 
     let active = true;
     const trackingUrl = buildTrackingUrl(confirmation.tokenNumber);
+    setQrCodeReady(false);
 
-    QRCode.toDataURL(trackingUrl, {
+    QRCode.toCanvas(qrCanvasRef.current, trackingUrl, {
       color: {
         dark: "#062a4c",
         light: "#ffffff",
@@ -227,14 +229,14 @@ function SubmitComplaint() {
       margin: 1,
       width: 190,
     })
-      .then((dataUrl) => {
+      .then(() => {
         if (!active) return;
-        setQrCodeUrl(dataUrl);
+        setQrCodeReady(true);
         setQrCodeError("");
       })
       .catch(() => {
         if (!active) return;
-        setQrCodeUrl("");
+        setQrCodeReady(false);
         setQrCodeError(
           "The QR code could not be generated. Use the tracking link instead.",
         );
@@ -532,7 +534,7 @@ function SubmitComplaint() {
       setSubmitting(true);
       setMessage("");
       setConfirmation(null);
-      setQrCodeUrl("");
+      setQrCodeReady(false);
       setQrCodeError("");
 
       const response = await fetch(`${API_BASE_URL}/public/complaints`, {
@@ -595,7 +597,7 @@ function SubmitComplaint() {
 
   const startAnotherGrievance = () => {
     setConfirmation(null);
-    setQrCodeUrl("");
+    setQrCodeReady(false);
     setQrCodeError("");
     setMessage("");
     setActiveStep(1);
@@ -664,19 +666,20 @@ function SubmitComplaint() {
 
                   <div className="grievance-receipt__tracking">
                     <div className="grievance-receipt__qr">
-                      {qrCodeUrl ? (
-                        <img
-                          alt={`QR code for grievance ${confirmation.tokenNumber}`}
-                          src={qrCodeUrl}
-                        />
-                      ) : (
+                      <canvas
+                        aria-label={`QR code for grievance ${confirmation.tokenNumber}`}
+                        hidden={!qrCodeReady}
+                        ref={qrCanvasRef}
+                        role="img"
+                      ></canvas>
+                      {!qrCodeReady ? (
                         <span>
                           <i
                             className="fa-solid fa-qrcode"
                             aria-hidden="true"
                           ></i>
                         </span>
-                      )}
+                      ) : null}
                     </div>
                     <div>
                       <h3>Scan to track your grievance</h3>

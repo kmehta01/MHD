@@ -140,7 +140,8 @@ const findForExport = async (filters) => {
             ip_address, user_agent, created_at
      FROM admin_audit_logs
      ${clause}
-     ORDER BY created_at DESC, id DESC`,
+     ORDER BY created_at DESC, id DESC
+     LIMIT 10000`,
     values,
   );
   return rows;

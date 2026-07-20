@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const jwt = require("jsonwebtoken");
 const AuthModel = require("../src/models/auth.model");
 const { verifyToken } = require("../src/middlewares/auth.middleware");
@@ -20,7 +21,8 @@ const buildResponse = () => ({
 test("protected requests use current database permissions instead of stale token permissions", async () => {
   const originalFindUser = AuthModel.findSessionUserById;
   const originalFindPermissions = AuthModel.getActivePermissionsByRoleId;
-  const secret = process.env.JWT_SECRET || "test-jwt-secret-value";
+  const originalJwtSecret = process.env.JWT_SECRET;
+  const secret = crypto.randomBytes(48).toString("base64url");
   process.env.JWT_SECRET = secret;
 
   AuthModel.findSessionUserById = async () => ({
@@ -67,12 +69,15 @@ test("protected requests use current database permissions instead of stale token
   } finally {
     AuthModel.findSessionUserById = originalFindUser;
     AuthModel.getActivePermissionsByRoleId = originalFindPermissions;
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originalJwtSecret;
   }
 });
 
 test("protected requests reject inactive roles immediately", async () => {
   const originalFindUser = AuthModel.findSessionUserById;
-  const secret = process.env.JWT_SECRET || "test-jwt-secret-value";
+  const originalJwtSecret = process.env.JWT_SECRET;
+  const secret = crypto.randomBytes(48).toString("base64url");
   process.env.JWT_SECRET = secret;
 
   AuthModel.findSessionUserById = async () => ({
@@ -99,5 +104,7 @@ test("protected requests reject inactive roles immediately", async () => {
     assert.equal(res.body.code, "SESSION_REVOKED");
   } finally {
     AuthModel.findSessionUserById = originalFindUser;
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originalJwtSecret;
   }
 });
