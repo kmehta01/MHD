@@ -4,6 +4,13 @@ const ComplaintModel = require("../models/complaint.model");
 const { recordAuditEvent } = require("../services/audit-log.service");
 
 const backendRoot = path.resolve(__dirname, "../..");
+const complaintUploadRoot = path.resolve(
+  backendRoot,
+  "uploads",
+  "complaints",
+);
+const STORED_COMPLAINT_FILE_PATTERN =
+  /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png)$/;
 
 const ISSUE_LABELS = {
   social_welfare: "Social welfare or assistance",
@@ -100,13 +107,42 @@ const isFutureDate = (value) => {
   return new Date(`${value}T00:00:00`) > today;
 };
 
+const resolveSafeComplaintUploadPath = (file) => {
+  const storedName =
+    typeof file?.filename === "string" ? file.filename : "";
+
+  if (!STORED_COMPLAINT_FILE_PATTERN.test(storedName)) {
+    return null;
+  }
+
+  const uploadPath = path.resolve(complaintUploadRoot, storedName);
+  const relativePath = path.relative(complaintUploadRoot, uploadPath);
+
+  if (
+    !relativePath ||
+    relativePath === ".." ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    return null;
+  }
+
+  return uploadPath;
+};
+
 const cleanupFiles = async (files = []) => {
   await Promise.all(
-    files.map((file) =>
-      fs.unlink(file.path).catch(() => {
+    files.map((file) => {
+      const uploadPath = resolveSafeComplaintUploadPath(file);
+
+      if (!uploadPath) {
+        return Promise.resolve();
+      }
+
+      return fs.unlink(uploadPath).catch(() => {
         // Best-effort cleanup for failed multipart submissions.
-      }),
-    ),
+      });
+    }),
   );
 };
 
@@ -593,6 +629,7 @@ const getComplaintStatus = async (req, res) => {
 
 module.exports = {
   getComplaintStatus,
+  resolveSafeComplaintUploadPath,
   submitAdminComplaint,
   submitComplaint,
   validateGrievanceBody,

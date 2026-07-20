@@ -118,13 +118,31 @@ const formatFileSize = (bytes) => {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 };
 
-const buildTrackingUrl = (reference) => {
-  const url = new URL(window.location.href);
-  url.search = "";
-  url.hash = "track-grievance";
-  url.searchParams.set("ref", reference);
-  return url.toString();
+const normalizeComplaintReference = (reference) => {
+  const normalizedReference = String(reference || "")
+    .trim()
+    .toUpperCase();
+
+  return /^[A-Z0-9]{1,8}-\d{4}-(?:0[1-9]|1[0-2])-\d{4,}$/.test(
+    normalizedReference,
+  )
+    ? normalizedReference
+    : "";
 };
+
+const buildTrackingPath = (reference) => {
+  const normalizedReference = normalizeComplaintReference(reference);
+
+  if (!normalizedReference) {
+    return "#track-grievance";
+  }
+
+  const searchParams = new URLSearchParams({ ref: normalizedReference });
+  return `?${searchParams.toString()}#track-grievance`;
+};
+
+const buildTrackingUrl = (reference) =>
+  new URL(buildTrackingPath(reference), window.location.href).toString();
 
 const Required = () => (
   <span className="grievance-required" aria-label="required">
@@ -172,9 +190,9 @@ function SubmitComplaint() {
   const [qrCodeUrl, setQrCodeUrl] = useState("");
   const [qrCodeError, setQrCodeError] = useState("");
   const [statusLookup, setStatusLookup] = useState({
-    tokenNumber:
-      new URLSearchParams(window.location.search).get("ref")?.toUpperCase() ||
-      "",
+    tokenNumber: normalizeComplaintReference(
+      new URLSearchParams(window.location.search).get("ref"),
+    ),
     contactDetail: "",
   });
   const [statusResult, setStatusResult] = useState(null);
@@ -667,7 +685,7 @@ function SubmitComplaint() {
                         reference number {confirmation.tokenNumber}.
                       </p>
                       <a
-                        href={buildTrackingUrl(confirmation.tokenNumber)}
+                        href={buildTrackingPath(confirmation.tokenNumber)}
                       >
                         Track status online
                         <i

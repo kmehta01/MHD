@@ -13,6 +13,9 @@ const {
 const {
   handleComplaintUpload,
 } = require("../middlewares/complaint-upload.middleware");
+const {
+  complaintAttachmentDownloadLimiter,
+} = require("../middlewares/rate-limit.middleware");
 
 const router = express.Router();
 
@@ -28,6 +31,10 @@ router.get("/", getComplaints);
 router.get("/notifications", getComplaintNotifications);
 router.post("/intake", handleComplaintUpload, submitAdminComplaint);
 router.get("/:id", getComplaintById);
-router.get("/:id/attachments/:attachmentId/download", downloadComplaintAttachment);
+router.get(
+  "/:id/attachments/:attachmentId/download",
+  complaintAttachmentDownloadLimiter,
+  downloadComplaintAttachment,
+);
 
 module.exports = router;

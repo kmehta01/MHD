@@ -1,6 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const path = require("node:path");
 const {
+  resolveSafeComplaintUploadPath,
   validateGrievanceBody,
 } = require("../src/controllers/public-complaint.controller");
 
@@ -68,4 +70,35 @@ test("requires conditional affected-person details", () => {
       }),
     /Affected person name is required/,
   );
+});
+
+test("resolves generated complaint filenames only inside the upload directory", () => {
+  const resolved = resolveSafeComplaintUploadPath({
+    filename: "1721462400000-123456789.pdf",
+    path: path.resolve(__dirname, "../.env"),
+  });
+
+  assert.equal(
+    resolved,
+    path.resolve(
+      __dirname,
+      "../uploads/complaints/1721462400000-123456789.pdf",
+    ),
+  );
+});
+
+test("rejects path traversal and unexpected stored upload filenames", () => {
+  const invalidNames = [
+    "../../.env",
+    "..\\..\\.env",
+    "/etc/passwd",
+    "C:\\Windows\\win.ini",
+    "1721462400000-123456789.exe",
+    "supporting-document.pdf",
+    "",
+  ];
+
+  invalidNames.forEach((filename) => {
+    assert.equal(resolveSafeComplaintUploadPath({ filename }), null);
+  });
 });
