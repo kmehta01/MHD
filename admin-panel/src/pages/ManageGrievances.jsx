@@ -88,7 +88,10 @@ const formatBelizeDate = (value) => {
   }).format(new Date(value));
 };
 
-const statusClass = (status) => String(status || "").toLowerCase().replace(/\s+/g, "-");
+const statusClass = (status) =>
+  String(status || "")
+    .toLowerCase()
+    .replace(/\s+/g, "-");
 
 const fileSizeLabel = (bytes) => {
   if (!bytes) return "0 KB";
@@ -141,9 +144,7 @@ const ManageGrievances = () => {
       ...(search ? { search } : {}),
       ...(effectiveStatus ? { status: effectiveStatus } : {}),
       ...(effectivePriority ? { priority: effectivePriority } : {}),
-      ...(routeFilter.assignment
-        ? { assignment: routeFilter.assignment }
-        : {}),
+      ...(routeFilter.assignment ? { assignment: routeFilter.assignment } : {}),
       ...(routeFilter.deadline ? { deadline: routeFilter.deadline } : {}),
       page,
       per_page: 10,
@@ -185,7 +186,9 @@ const ManageGrievances = () => {
       .catch((requestError) => {
         if (!active) return;
         setComplaints([]);
-        setError(requestError.response?.data?.message || "Failed to load grievances");
+        setError(
+          requestError.response?.data?.message || "Failed to load grievances",
+        );
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -210,7 +213,10 @@ const ManageGrievances = () => {
       .catch((requestError) => {
         if (active) {
           setSelectedComplaint(null);
-          setError(requestError.response?.data?.message || "Failed to load grievance details");
+          setError(
+            requestError.response?.data?.message ||
+              "Failed to load grievance details",
+          );
         }
       })
       .finally(() => {
@@ -248,7 +254,9 @@ const ManageGrievances = () => {
       })
       .catch((requestError) => {
         setComplaints([]);
-        setError(requestError.response?.data?.message || "Failed to load grievances");
+        setError(
+          requestError.response?.data?.message || "Failed to load grievances",
+        );
       })
       .finally(() => setLoading(false));
   };
@@ -287,7 +295,9 @@ const ManageGrievances = () => {
         "grievance-attachment",
       );
     } catch (requestError) {
-      setError(requestError.response?.data?.message || "Failed to download attachment");
+      setError(
+        requestError.response?.data?.message || "Failed to download attachment",
+      );
     } finally {
       setDownloadingId(null);
     }
@@ -305,7 +315,10 @@ const ManageGrievances = () => {
             <strong>Grievances</strong>
           </div>
           <h1>Grievances</h1>
-          <p>Track citizen complaint tickets submitted through the public website.</p>
+          <p>
+            Track citizen complaint tickets submitted through the public
+            website.
+          </p>
         </div>
         <div className="module-page-actions">
           {view === "new" ? (
@@ -316,7 +329,11 @@ const ManageGrievances = () => {
               <Icon name="plus" size={17} /> Grievance Form
             </Link>
           ) : null}
-          <button className="button button-primary" onClick={refresh} type="button">
+          <button
+            className="button button-primary"
+            onClick={refresh}
+            type="button"
+          >
             <Icon name="refresh" size={17} /> Refresh
           </button>
         </div>
@@ -353,18 +370,27 @@ const ManageGrievances = () => {
               <option key={option}>{option}</option>
             ))}
           </select>
-          <button onClick={clearFilters} type="button">Clear</button>
+          <button onClick={clearFilters} type="button">
+            Clear
+          </button>
         </div>
       </section>
 
-      {error ? <div className="grievance-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="grievance-error" role="alert">
+          {error}
+        </div>
+      ) : null}
 
       <div className="grievance-admin-grid">
         <section className="panel grievance-list-panel">
           <div className="panel-header">
             <div>
               <h2>Complaint Tickets</h2>
-              <p>{pagination.total} ticket{pagination.total === 1 ? "" : "s"} found</p>
+              <p>
+                {pagination.total} ticket{pagination.total === 1 ? "" : "s"}{" "}
+                found
+              </p>
             </div>
           </div>
 
@@ -408,22 +434,30 @@ const ManageGrievances = () => {
                         </button>
                       </td>
                       <td>
-                        <strong className="subject-cell">{complaint.complaintSubject}</strong>
+                        <strong className="subject-cell">
+                          {complaint.complaintSubject}
+                        </strong>
                         <small>{complaint.fullName}</small>
                       </td>
                       <td>{displayValue(complaint.submissionType)}</td>
                       <td>{complaint.incidentLocation || "Not provided"}</td>
                       <td>
-                        <span className={`priority-label ${String(complaint.ticketPriority).toLowerCase()}`}>
+                        <span
+                          className={`priority-label ${String(complaint.ticketPriority).toLowerCase()}`}
+                        >
                           <i /> {complaint.ticketPriority}
                         </span>
                       </td>
                       <td>
-                        <span className={`status-badge ${statusClass(complaint.status)}`}>
+                        <span
+                          className={`status-badge ${statusClass(complaint.status)}`}
+                        >
                           {complaint.status}
                         </span>
                       </td>
-                      <td className="muted-cell">{formatBelizeDate(complaint.submittedAt)}</td>
+                      <td className="muted-cell">
+                        {formatBelizeDate(complaint.submittedAt)}
+                      </td>
                       <td>
                         <button
                           className="table-action"
@@ -449,7 +483,9 @@ const ManageGrievances = () => {
             >
               Previous
             </button>
-            <span>Page {pagination.page} of {pagination.total_pages}</span>
+            <span>
+              Page {pagination.page} of {pagination.total_pages}
+            </span>
             <button
               disabled={loading || page >= pagination.total_pages}
               onClick={() => changePage(page + 1)}
@@ -464,12 +500,16 @@ const ManageGrievances = () => {
           <div className="panel-header compact">
             <div>
               <h2>Ticket Details</h2>
-              <p>{selectedComplaint?.tokenNumber || "Select a ticket to review"}</p>
+              <p>
+                {selectedComplaint?.tokenNumber || "Select a ticket to review"}
+              </p>
             </div>
           </div>
 
           {detailLoading ? (
-            <div className="grievance-detail-empty">Loading ticket details...</div>
+            <div className="grievance-detail-empty">
+              Loading ticket details...
+            </div>
           ) : !selectedComplaint ? (
             <div className="grievance-detail-empty">
               Choose a grievance ticket from the table.
@@ -615,7 +655,9 @@ const ManageGrievances = () => {
                     <div>
                       <dt>Status</dt>
                       <dd>
-                        <span className={`status-badge ${statusClass(selectedComplaint.status)}`}>
+                        <span
+                          className={`status-badge ${statusClass(selectedComplaint.status)}`}
+                        >
                           {selectedComplaint.status}
                         </span>
                       </dd>
@@ -635,7 +677,9 @@ const ManageGrievances = () => {
                     </div>
                     <div>
                       <dt>Email Address</dt>
-                      <dd>{selectedComplaint.emailAddress || "Not provided"}</dd>
+                      <dd>
+                        {selectedComplaint.emailAddress || "Not provided"}
+                      </dd>
                     </div>
                     <div>
                       <dt>Gender</dt>
@@ -643,7 +687,10 @@ const ManageGrievances = () => {
                     </div>
                     <div>
                       <dt>Social Security Number</dt>
-                      <dd>{selectedComplaint.socialSecurityNumber || "Not provided"}</dd>
+                      <dd>
+                        {selectedComplaint.socialSecurityNumber ||
+                          "Not provided"}
+                      </dd>
                     </div>
                     <div>
                       <dt>Department / Ministry</dt>
@@ -659,12 +706,16 @@ const ManageGrievances = () => {
                     </div>
                     <div>
                       <dt>Incident Date</dt>
-                      <dd>{selectedComplaint.incidentDate || "Not provided"}</dd>
+                      <dd>
+                        {selectedComplaint.incidentDate || "Not provided"}
+                      </dd>
                     </div>
                     <div>
                       <dt>Status</dt>
                       <dd>
-                        <span className={`status-badge ${statusClass(selectedComplaint.status)}`}>
+                        <span
+                          className={`status-badge ${statusClass(selectedComplaint.status)}`}
+                        >
                           {selectedComplaint.status}
                         </span>
                       </dd>
@@ -682,24 +733,39 @@ const ManageGrievances = () => {
                 <>
                   <div className="grievance-detail-copy">
                     <h3>Office intake</h3>
-                    <p>This grievance was recorded in the admin panel for a walk-in complainant.</p>
+                    <p>
+                      This grievance was recorded in the admin panel for a
+                      walk-in complainant.
+                    </p>
                   </div>
                   <dl className="grievance-detail-list">
                     <div>
                       <dt>Date received</dt>
-                      <dd>{displayValue(selectedComplaint.officeData.receivedDate)}</dd>
+                      <dd>
+                        {displayValue(
+                          selectedComplaint.officeData.receivedDate,
+                        )}
+                      </dd>
                     </div>
                     <div>
                       <dt>Received by</dt>
-                      <dd>{displayValue(selectedComplaint.officeData.receivedBy)}</dd>
+                      <dd>
+                        {displayValue(selectedComplaint.officeData.receivedBy)}
+                      </dd>
                     </div>
                     <div>
                       <dt>Initial classification</dt>
-                      <dd>{displayValue(selectedComplaint.officeData.initialClassification)}</dd>
+                      <dd>
+                        {displayValue(
+                          selectedComplaint.officeData.initialClassification,
+                        )}
+                      </dd>
                     </div>
                     <div>
                       <dt>Assigned to</dt>
-                      <dd>{displayValue(selectedComplaint.officeData.assignedTo)}</dd>
+                      <dd>
+                        {displayValue(selectedComplaint.officeData.assignedTo)}
+                      </dd>
                     </div>
                   </dl>
                 </>
@@ -723,7 +789,9 @@ const ManageGrievances = () => {
                           type="button"
                         >
                           <Icon name="download" size={15} />
-                          {downloadingId === attachment.id ? "Downloading" : "Download"}
+                          {downloadingId === attachment.id
+                            ? "Downloading"
+                            : "Download"}
                         </button>
                       </li>
                     ))}

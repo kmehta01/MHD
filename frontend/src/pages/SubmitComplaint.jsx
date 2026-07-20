@@ -393,7 +393,8 @@ function SubmitComplaint() {
 
     if (step === 2) {
       if (!form.issue_type.length && !form.issue_other.trim()) {
-        errors.issue_type = "Select at least one issue type or specify another.";
+        errors.issue_type =
+          "Select at least one issue type or specify another.";
       }
       if (!form.channel.length) {
         errors.channel = "Select at least one contact channel.";
@@ -415,10 +416,7 @@ function SubmitComplaint() {
       if (!form.tried_resolve) {
         errors.tried_resolve = "Select Yes or No.";
       }
-      if (
-        form.tried_resolve === "yes" &&
-        !form.prev_attempts.trim()
-      ) {
+      if (form.tried_resolve === "yes" && !form.prev_attempts.trim()) {
         errors.prev_attempts = "Describe the steps you already took.";
       }
     }
@@ -584,7 +582,9 @@ function SubmitComplaint() {
       const result = await response.json();
 
       if (!response.ok || !result.status) {
-        throw new Error(result.message || "Grievance status could not be found");
+        throw new Error(
+          result.message || "Grievance status could not be found",
+        );
       }
 
       setStatusResult(result.data);
@@ -634,7 +634,10 @@ function SubmitComplaint() {
               </p>
             </div>
             <a className="grievance-help-link" href="#grievance-support">
-              <i className="fa-regular fa-circle-question" aria-hidden="true"></i>
+              <i
+                className="fa-regular fa-circle-question"
+                aria-hidden="true"
+              ></i>
               Support &amp; accessibility
             </a>
           </div>
@@ -687,9 +690,7 @@ function SubmitComplaint() {
                         The QR code opens the tracking form and fills in
                         reference number {confirmation.tokenNumber}.
                       </p>
-                      <a
-                        href={buildTrackingPath(confirmation.tokenNumber)}
-                      >
+                      <a href={buildTrackingPath(confirmation.tokenNumber)}>
                         Track status online
                         <i
                           className="fa-solid fa-arrow-right"
@@ -744,7 +745,10 @@ function SubmitComplaint() {
                 </section>
               ) : (
                 <>
-                  <div className="grievance-progress" aria-label="Form progress">
+                  <div
+                    className="grievance-progress"
+                    aria-label="Form progress"
+                  >
                     <ol>
                       {steps.map((step, index) => {
                         const stepNumber = index + 1;
@@ -801,7 +805,13 @@ function SubmitComplaint() {
                           Before you begin: support for sensitive grievances
                         </h3>
                         <p>
-                          If your grievance concerns abuse, gender-based violence, or another sensitive or distressing matter, you may ask to speak with a trained officer first, and you can be offered counseling or a psychosocial referral before you lodge your complaint. You decide whether to accept this support. It does not delay the handling of your grievance. 
+                          If your grievance concerns abuse, gender-based
+                          violence, or another sensitive or distressing matter,
+                          you may ask to speak with a trained officer first, and
+                          you can be offered counseling or a psychosocial
+                          referral before you lodge your complaint. You decide
+                          whether to accept this support. It does not delay the
+                          handling of your grievance.
                         </p>
                       </div>
                     </div>
@@ -837,7 +847,8 @@ function SubmitComplaint() {
                             <div>
                               <h3>Language and assistance</h3>
                               <p>
-                                Available in English and Spanish, with Maya and Garifuna versions ( in preparation ). 
+                                Available in English and Spanish, with Maya and
+                                Garifuna versions ( in preparation ).
                               </p>
                             </div>
                           </div>
@@ -994,9 +1005,7 @@ function SubmitComplaint() {
                               <div className="grievance-option-grid grievance-option-grid--three">
                                 {contactOptions.map((option) => (
                                   <OptionTile
-                                    checked={
-                                      form.contact_pref === option.value
-                                    }
+                                    checked={form.contact_pref === option.value}
                                     key={option.value}
                                     label={option.label}
                                     name="contact_pref"
@@ -1153,7 +1162,8 @@ function SubmitComplaint() {
 
                           <fieldset className="grievance-fieldset">
                             <legend>
-                              Which channel did you use to reach us? <Required />
+                              Which channel did you use to reach us?{" "}
+                              <Required />
                             </legend>
                             <div className="grievance-option-grid grievance-option-grid--four">
                               {channelOptions.map((option) => (
@@ -1539,10 +1549,7 @@ function SubmitComplaint() {
                             <div>
                               <span>Issue type</span>
                               <strong>
-                                {[
-                                  ...selectedIssueLabels,
-                                  form.issue_other,
-                                ]
+                                {[...selectedIssueLabels, form.issue_other]
                                   .filter(Boolean)
                                   .join(", ") || "Not selected"}
                               </strong>
@@ -1568,18 +1575,27 @@ function SubmitComplaint() {
 
                           <div className="grievance-declaration">
                             <p>
-                              I declare that the information provided in this form is true and accurate to the best of my knowledge. I understand that:
+                              I declare that the information provided in this
+                              form is true and accurate to the best of my
+                              knowledge. I understand that:
                             </p>
                             <ul>
                               <li>My identity shall be kept confidential.</li>
                               <li>
-                                I shall be provided with a unique reference number at intake, unless I have chosen to submit anonymously. 
+                                I shall be provided with a unique reference
+                                number at intake, unless I have chosen to submit
+                                anonymously.
                               </li>
                               <li>
-                                I shall receive updates on the progress of my grievance, unless I have chosen to submit anonymously. 
+                                I shall receive updates on the progress of my
+                                grievance, unless I have chosen to submit
+                                anonymously.
                               </li>
                               <li>
-                                I have the right to appeal on objective grounds, including disagreement with the decision, a procedural error, evidence not being considered, an unreasonable delay, or retaliation.
+                                I have the right to appeal on objective grounds,
+                                including disagreement with the decision, a
+                                procedural error, evidence not being considered,
+                                an unreasonable delay, or retaliation.
                               </li>
                             </ul>
                           </div>
@@ -1728,9 +1744,7 @@ function SubmitComplaint() {
                             disabled={submitting}
                             type="submit"
                           >
-                            {submitting
-                              ? "Submitting..."
-                              : "Submit grievance"}
+                            {submitting ? "Submitting..." : "Submit grievance"}
                             <i
                               className="fa-solid fa-paper-plane"
                               aria-hidden="true"
@@ -1746,7 +1760,10 @@ function SubmitComplaint() {
 
             <aside className="grievance-tracker" id="track-grievance">
               <div className="grievance-tracker__icon">
-                <i className="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <i
+                  className="fa-solid fa-magnifying-glass"
+                  aria-hidden="true"
+                ></i>
               </div>
               <p className="section-label">Track a grievance</p>
               <h2>Check status</h2>

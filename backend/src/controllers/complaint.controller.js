@@ -1,4 +1,3 @@
-const fs = require("fs");
 const path = require("path");
 const ComplaintModel = require("../models/complaint.model");
 const { PRIORITIES, STATUSES } = require("../config/complaint-options");
@@ -367,9 +366,10 @@ const downloadComplaintAttachment = async (req, res) => {
     const relativePath = path.relative(uploadRoot, absolutePath);
 
     if (
-      relativePath.startsWith("..") ||
-      path.isAbsolute(relativePath) ||
-      !fs.existsSync(absolutePath)
+      !relativePath ||
+      relativePath === ".." ||
+      relativePath.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relativePath)
     ) {
       return res.status(404).json({
         status: false,
@@ -377,7 +377,22 @@ const downloadComplaintAttachment = async (req, res) => {
       });
     }
 
-    return res.download(absolutePath, attachment.original_name);
+    return res.download(absolutePath, attachment.original_name, (error) => {
+      if (!error) return;
+
+      if (res.headersSent) {
+        res.destroy();
+        return;
+      }
+
+      const unavailable = ["EACCES", "ENOENT", "ENOTDIR"].includes(error.code);
+      res.status(unavailable ? 404 : 500).json({
+        status: false,
+        message: unavailable
+          ? "Attachment file is not available"
+          : "Failed to download attachment",
+      });
+    });
   } catch (error) {
     return res.status(500).json({
       status: false,
