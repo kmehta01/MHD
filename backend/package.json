@@ -10,6 +10,8 @@
     "migrate:complaints": "node scripts/apply-complaints-migration.js",
     "migrate:two-factor": "node scripts/apply-two-factor-migration.js",
     "migrate:role-permissions": "node scripts/apply-role-permissions-migration.js",
+    "migrate:profile-photo": "node scripts/apply-profile-photo-migration.js",
+    "migrate:general-settings": "node scripts/apply-general-settings-migration.js",
     "verify:smtp": "node scripts/verify-smtp.js",
     "two-factor:break-glass": "node scripts/break-glass-recovery-codes.js",
     "test": "node --test"

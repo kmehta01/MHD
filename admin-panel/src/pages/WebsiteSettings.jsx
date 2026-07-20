@@ -1,7 +1,5 @@
-import ModulePlaceholder from "../components/ModulePlaceholder";
+import GeneralSettings from "./super-admin/settings/GeneralSettings";
 
-const WebsiteSettings = () => (
-  <ModulePlaceholder title="Settings" description="Configure website identity, integrations, and system preferences." icon="settings" actionLabel="Add Setting" itemName="settings" />
-);
+const WebsiteSettings = () => <GeneralSettings />;
 
 export default WebsiteSettings;

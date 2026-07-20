@@ -6,6 +6,7 @@ const findAdminByEmail = async (email) => {
       au.id,
       au.name,
       au.email,
+      au.profile_photo,
       au.password,
       au.status,
       au.department_id,
@@ -46,6 +47,7 @@ const findSessionUserById = async (userId) => {
       au.name,
       au.email,
       au.phone,
+      au.profile_photo,
       au.status,
       au.last_login,
       au.created_at,
@@ -104,6 +106,17 @@ const updatePassword = async (userId, password, executor = db) => {
   return result;
 };
 
+const updateProfilePhoto = async (userId, profilePhoto, executor = db) => {
+  const [result] = await executor.query(
+    `UPDATE admin_users
+     SET profile_photo = ?, updated_at = NOW()
+     WHERE id = ?`,
+    [profilePhoto, userId],
+  );
+
+  return result;
+};
+
 const updateLastLogin = async (userId) => {
   await db.query(
     `UPDATE admin_users
@@ -121,4 +134,5 @@ module.exports = {
   updateLastLogin,
   updatePassword,
   updateProfile,
+  updateProfilePhoto,
 };

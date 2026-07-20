@@ -19,6 +19,7 @@ const eventDefinitions = {
   ADMIN_USER_PASSWORD_UPDATED: { action: "update", verb: "Updated password for admin user" },
   ADMIN_USER_DELETED: { action: "delete", verb: "Deleted admin user" },
   PROFILE_UPDATED: { action: "update", verb: "Updated own profile" },
+  PROFILE_PHOTO_UPDATED: { action: "update", verb: "Updated own profile picture" },
   PROFILE_PASSWORD_UPDATED: { action: "security", verb: "Changed own password" },
   ADMIN_GRIEVANCE_CREATED: { action: "create", verb: "Recorded walk-in grievance" },
   ROLE_CREATED: { action: "create", verb: "Created role" },

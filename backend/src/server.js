@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const path = require("path");
 const DatabaseModel = require("./models/database.model");
 const installRoutes = require("./routes/install.routes");
 require("dotenv").config();
@@ -26,6 +27,29 @@ app.use(
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+app.use(
+  "/uploads/profile-photos",
+  express.static(path.resolve(__dirname, "../uploads/profile-photos"), {
+    immutable: true,
+    maxAge: "7d",
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    },
+  }),
+);
+
+app.use(
+  "/uploads/settings",
+  express.static(path.resolve(__dirname, "../uploads/settings"), {
+    immutable: true,
+    maxAge: "7d",
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }),
+);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -53,6 +77,7 @@ app.use("/api/roles", require("./routes/role.routes"));
 app.use("/api/users", require("./routes/user.routes"));
 app.use("/api/departments", require("./routes/department.routes"));
 app.use("/api/audit-logs", require("./routes/audit-log.routes"));
+app.use("/api/settings", require("./routes/settings.routes"));
 app.use("/api/public", require("./routes/public.routes"));
 app.use("/api/complaints", require("./routes/complaint.routes"));
 

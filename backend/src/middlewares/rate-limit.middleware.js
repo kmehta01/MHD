@@ -86,6 +86,22 @@ const auditExportLimiter = createLimiter({
   message: "Too many audit export requests. Please try again later.",
 });
 
+const settingsMutationLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) =>
+    req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip)}`,
+  message: "Too many settings changes. Please try again later.",
+});
+
+const settingsUploadLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) =>
+    req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip)}`,
+  message: "Too many settings file uploads. Please try again later.",
+});
+
 module.exports = {
   adminComplaintSubmissionLimiter,
   auditExportLimiter,
@@ -95,6 +111,8 @@ module.exports = {
   installerStatusLimiter,
   loginLimiter,
   publicComplaintSubmissionLimiter,
+  settingsMutationLimiter,
+  settingsUploadLimiter,
   twoFactorResendLimiter,
   twoFactorVerifyLimiter,
 };

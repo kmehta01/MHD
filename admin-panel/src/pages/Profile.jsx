@@ -1,22 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../components/Icon";
+import ProfileAvatar from "../components/ProfileAvatar";
 import API from "../services/api";
+
+const MAX_PROFILE_PHOTO_BYTES = 500 * 1024;
+const ACCEPTED_PROFILE_PHOTO_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 const emptyPasswordForm = {
   current_password: "",
   new_password: "",
   confirm_password: "",
 };
-
-const getInitials = (name = "") =>
-  name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase() || "AD";
 
 const formatDate = (value, fallback = "Not available") => {
   if (!value) return fallback;
@@ -42,6 +40,14 @@ const Profile = () => {
   const [savingPassword, setSavingPassword] = useState(false);
   const [profileNotice, setProfileNotice] = useState(null);
   const [passwordNotice, setPasswordNotice] = useState(null);
+  const [photoModalOpen, setPhotoModalOpen] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState("");
+  const [photoError, setPhotoError] = useState("");
+  const [photoDragging, setPhotoDragging] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
+  const photoBrowseButtonRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -75,6 +81,33 @@ const Profile = () => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!photoModalOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !uploadingPhoto) {
+        setPhotoModalOpen(false);
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.addEventListener("keydown", handleKeyDown);
+    photoBrowseButtonRef.current?.focus();
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [photoModalOpen, uploadingPhoto]);
+
+  useEffect(
+    () => () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    },
+    [photoPreview],
+  );
+
   const passwordChecks = useMemo(
     () => [
       { label: "At least 8 characters", passed: passwordForm.new_password.length >= 8 },
@@ -94,6 +127,75 @@ const Profile = () => {
     const { name, value } = event.target;
     setPasswordForm((current) => ({ ...current, [name]: value }));
     setPasswordNotice(null);
+  };
+
+  const closePhotoModal = () => {
+    if (uploadingPhoto) return;
+    setPhotoModalOpen(false);
+    setSelectedPhoto(null);
+    setPhotoPreview("");
+    setPhotoError("");
+    setPhotoDragging(false);
+  };
+
+  const choosePhoto = (file) => {
+    setPhotoError("");
+
+    if (!file) return;
+    setSelectedPhoto(null);
+    setPhotoPreview("");
+    if (!ACCEPTED_PROFILE_PHOTO_TYPES.has(file.type)) {
+      setPhotoError("Choose a JPG, PNG, or WebP image.");
+      return;
+    }
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+      setPhotoError("The profile picture must be 500 KB or smaller.");
+      return;
+    }
+    if (file.size === 0) {
+      setPhotoError("The selected image is empty.");
+      return;
+    }
+
+    setSelectedPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handlePhotoDrop = (event) => {
+    event.preventDefault();
+    setPhotoDragging(false);
+    choosePhoto(event.dataTransfer.files?.[0]);
+  };
+
+  const uploadProfilePhoto = async () => {
+    if (!selectedPhoto) {
+      setPhotoError("Choose a profile picture first.");
+      return;
+    }
+
+    try {
+      setUploadingPhoto(true);
+      setPhotoError("");
+      const formData = new FormData();
+      formData.append("profile_photo", selectedPhoto);
+      const response = await API.post("/auth/profile/photo", formData);
+      const nextUser = response.data.data;
+
+      setUser(nextUser);
+      localStorage.setItem("admin_user", JSON.stringify(nextUser));
+      window.dispatchEvent(new CustomEvent("admin-user-updated", { detail: nextUser }));
+      setProfileNotice({ type: "success", text: response.data.message });
+      setPhotoModalOpen(false);
+      setSelectedPhoto(null);
+      setPhotoPreview("");
+      setPhotoDragging(false);
+    } catch (error) {
+      setPhotoError(
+        error.response?.data?.message || "Unable to update your profile picture.",
+      );
+    } finally {
+      setUploadingPhoto(false);
+    }
   };
 
   const saveProfile = async (event) => {
@@ -177,7 +279,22 @@ const Profile = () => {
 
       <div className="profile-layout">
         <aside className="profile-overview-card">
-          <div className="profile-avatar-xl">{getInitials(user?.name)}</div>
+          <div className="profile-avatar-editor">
+            <ProfileAvatar
+              className="profile-avatar-xl"
+              name={user?.name}
+              profilePhoto={user?.profile_photo}
+            />
+            <button
+              aria-label="Change profile picture"
+              className="profile-avatar-add"
+              onClick={() => setPhotoModalOpen(true)}
+              title="Change profile picture"
+              type="button"
+            >
+              <Icon name="plus" size={16} strokeWidth={2.5} />
+            </button>
+          </div>
           <h2>{user?.name || "Administrator"}</h2>
           <p>{user?.email || ""}</p>
           <span className="profile-role-badge">{user?.role_name || "Administrator"}</span>
@@ -267,6 +384,79 @@ const Profile = () => {
           </section>
         </div>
       </div>
+
+      {photoModalOpen ? (
+        <div className="modal-backdrop profile-photo-backdrop" onMouseDown={closePhotoModal}>
+          <section
+            aria-labelledby="profile-photo-title"
+            aria-modal="true"
+            className="profile-photo-modal"
+            onMouseDown={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className="profile-photo-modal-header">
+              <div>
+                <p className="profile-eyebrow">Profile picture</p>
+                <h2 id="profile-photo-title">Upload a new photo</h2>
+              </div>
+              <button
+                aria-label="Close profile picture dialog"
+                className="profile-photo-close"
+                disabled={uploadingPhoto}
+                onClick={closePhotoModal}
+                type="button"
+              >
+                <Icon name="close" size={19} />
+              </button>
+            </div>
+
+            <div
+              className={`profile-photo-dropzone${photoDragging ? " dragging" : ""}${photoPreview ? " has-preview" : ""}`}
+              onDragEnter={(event) => { event.preventDefault(); setPhotoDragging(true); }}
+              onDragLeave={(event) => { event.preventDefault(); setPhotoDragging(false); }}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={handlePhotoDrop}
+            >
+              {photoPreview ? (
+                <img alt="Selected profile preview" src={photoPreview} />
+              ) : (
+                <span className="profile-photo-upload-icon"><Icon name="arrowUp" size={23} /></span>
+              )}
+              <strong>{photoPreview ? selectedPhoto?.name : "Drag and drop your photo here"}</strong>
+              <span>{photoPreview ? `${Math.ceil((selectedPhoto?.size || 0) / 1024)} KB selected` : "or choose a file from your device"}</span>
+              <button
+                className="button button-secondary"
+                disabled={uploadingPhoto}
+                onClick={() => photoInputRef.current?.click()}
+                ref={photoBrowseButtonRef}
+                type="button"
+              >
+                {photoPreview ? "Choose another photo" : "Browse files"}
+              </button>
+              <input
+                accept="image/jpeg,image/png,image/webp"
+                className="sr-only"
+                onChange={(event) => {
+                  choosePhoto(event.target.files?.[0]);
+                  event.target.value = "";
+                }}
+                ref={photoInputRef}
+                type="file"
+              />
+            </div>
+
+            <p className="profile-photo-help">JPG, PNG, or WebP · Maximum 500 KB</p>
+            {photoError ? <div className="profile-photo-error" role="alert">{photoError}</div> : null}
+
+            <div className="profile-photo-actions">
+              <button className="button button-secondary" disabled={uploadingPhoto} onClick={closePhotoModal} type="button">Cancel</button>
+              <button className="button button-primary" disabled={!selectedPhoto || uploadingPhoto} onClick={uploadProfilePhoto} type="button">
+                <Icon name="check" size={16} /> {uploadingPhoto ? "Uploading..." : "Save profile picture"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 };

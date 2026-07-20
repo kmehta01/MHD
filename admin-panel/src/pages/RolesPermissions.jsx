@@ -21,6 +21,7 @@ const moduleLabels = {
   reports: "Reports",
   roles: "Roles & Permissions",
   settings: "System Settings",
+  settings_general: "General Settings",
   users: "User Management",
 };
 

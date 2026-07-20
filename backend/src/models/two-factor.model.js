@@ -55,6 +55,7 @@ const findChallengeByTokenHash = async (challengeTokenHash) => {
       c.locked_at,
       au.name,
       au.email,
+      au.profile_photo,
       au.status,
       au.department_id,
       d.name AS department_name,

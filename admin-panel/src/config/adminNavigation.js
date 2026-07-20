@@ -189,9 +189,9 @@ export const adminNavigation = [
   },
   {
     name: "System Settings",
-    path: "/settings",
+    path: "/super-admin/settings/general",
     icon: "settings",
-    permission: "settings.view",
+    permission: ["settings.general.view", "settings.view"],
   },
   {
     name: "Audit Logs",

@@ -22,6 +22,7 @@ import Profile from "./pages/Profile";
 import ProtectedRoute from "./components/ProtectedRoute";
 import PermissionRoute from "./components/PermissionRoute";
 import SuperAdminRoute from "./components/SuperAdminRoute";
+import RoleRoute from "./components/RoleRoute";
 import AdminLayout from "./layouts/AdminLayout";
 
 function App() {
@@ -131,9 +132,11 @@ function App() {
           <Route
             path="/settings"
             element={
-              <PermissionRoute permission="settings.view">
-                <WebsiteSettings />
-              </PermissionRoute>
+              <RoleRoute allowedRoles={["super-admin", "admin"]}>
+                <PermissionRoute permission={["settings.general.view", "settings.view"]}>
+                  <WebsiteSettings />
+                </PermissionRoute>
+              </RoleRoute>
             }
           />
           <Route
@@ -226,13 +229,16 @@ function App() {
             }
           />
           <Route
-            path="/system-settings/general"
+            path="/super-admin/settings/general"
             element={
-              <SuperAdminRoute>
-                <WebsiteSettings />
-              </SuperAdminRoute>
+              <RoleRoute allowedRoles={["super-admin", "admin"]}>
+                <PermissionRoute permission={["settings.general.view", "settings.view"]}>
+                  <WebsiteSettings />
+                </PermissionRoute>
+              </RoleRoute>
             }
           />
+          <Route path="/system-settings/general" element={<Navigate to="/super-admin/settings/general" replace />} />
           <Route
             path="/system-settings/audit-logs"
             element={

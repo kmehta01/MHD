@@ -117,7 +117,7 @@ export const superAdminNavigation = [
     children: [
       {
         name: "General Settings",
-        path: "/system-settings/general",
+        path: "/super-admin/settings/general",
       },
       {
         name: "Ticket Number Format",

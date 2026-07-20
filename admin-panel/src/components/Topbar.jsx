@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon";
+import ProfileAvatar from "./ProfileAvatar";
 import API from "../services/api";
 import { hasAnyPermission, isAdmin } from "../utils/permissions";
 import { findAdminNavigationItem } from "../config/adminNavigation";
@@ -14,18 +15,11 @@ const pageNames = {
   "/users": "Users",
   "/roles-permissions": "Roles & Permissions",
   "/settings": "Settings",
+  "/super-admin/settings/general": "General Settings",
   "/audit-logs": "Audit Logs",
   "/profile": "My Profile",
   "/grievances/new/create": "Grievance Form",
 };
-
-const getInitials = (name) =>
-  name
-    .split(" ")
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
 
 const getStoredReadId = (storageKey) =>
   Math.max(0, Number.parseInt(localStorage.getItem(storageKey), 10) || 0);
@@ -296,7 +290,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
             onClick={() => setOpenMenu(openMenu === "profile" ? null : "profile")}
             type="button"
           >
-            <span className="avatar">{getInitials(name)}</span>
+            <ProfileAvatar name={name} profilePhoto={adminUser?.profile_photo} />
             <span className="profile-copy">
               <strong>{name}</strong>
               <span>{role}</span>
@@ -306,7 +300,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
           {openMenu === "profile" ? (
             <div className="dropdown-panel profile-panel">
               <div className="profile-summary">
-                <span className="avatar large">{getInitials(name)}</span>
+                <ProfileAvatar className="avatar large" name={name} profilePhoto={adminUser?.profile_photo} />
                 <div>
                   <strong>{name}</strong>
                   <span>{adminUser?.email || "admin@humandevelopment.gov.bz"}</span>

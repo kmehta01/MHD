@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const path = require("path");
 const { getJwtSecret } = require("../config/jwt");
 const AuthModel = require("../models/auth.model");
 const TwoFactorModel = require("../models/two-factor.model");
@@ -10,6 +11,10 @@ const {
 const { sendLoginOtp } = require("../services/mail.service");
 const { recordAuthEvent } = require("../services/auth-audit.service");
 const { runAuditedMutation } = require("../services/audit-log.service");
+const {
+  removeUploadedFile,
+  uploadRoot: profilePhotoUploadRoot,
+} = require("../middlewares/profile-photo-upload.middleware");
 const {
   createChallengeToken,
   generateOtp,
@@ -95,6 +100,7 @@ const createSession = async (user, twoFactorVerified) => {
     {
       id: userId,
       email: user.email,
+      profile_photo: user.profile_photo || null,
       role_id: user.role_id,
       role_slug: user.role_slug,
       department_id: user.department_id || null,
@@ -116,6 +122,7 @@ const createSession = async (user, twoFactorVerified) => {
       id: userId,
       name: user.name,
       email: user.email,
+      profile_photo: user.profile_photo || null,
       role_id: user.role_id,
       role_name: user.role_name,
       role_slug: user.role_slug,
@@ -137,6 +144,7 @@ const getCurrentSession = async (req, res) =>
       name: req.user.name,
       email: req.user.email,
       phone: req.user.phone || null,
+      profile_photo: req.user.profile_photo || null,
       role_id: req.user.role_id,
       role_name: req.user.role_name,
       role_slug: req.user.role_slug,
@@ -209,6 +217,7 @@ const updateCurrentProfile = async (req, res) => {
         name: user.name,
         email: user.email,
         phone: user.phone || null,
+        profile_photo: user.profile_photo || null,
         role_id: user.role_id,
         role_name: user.role_name,
         role_slug: user.role_slug,
@@ -225,6 +234,66 @@ const updateCurrentProfile = async (req, res) => {
     return res.status(500).json({
       status: false,
       message: "Failed to update profile",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+const removeStoredProfilePhoto = async (storedPath) => {
+  const prefix = "/uploads/profile-photos/";
+  if (!storedPath?.startsWith(prefix)) return;
+
+  const filename = path.basename(storedPath);
+  await removeUploadedFile(path.join(profilePhotoUploadRoot, filename));
+};
+
+const updateCurrentProfilePhoto = async (req, res) => {
+  const profilePhoto = `/uploads/profile-photos/${req.file.filename}`;
+  const previousProfilePhoto = req.user.profile_photo || null;
+
+  try {
+    await runAuditedMutation(
+      req,
+      {
+        eventType: "PROFILE_PHOTO_UPDATED",
+        resourceType: "admin_user",
+        resourceId: req.user.id,
+      },
+      (connection) =>
+        AuthModel.updateProfilePhoto(req.user.id, profilePhoto, connection),
+    );
+
+    const user = await AuthModel.findSessionUserById(req.user.id);
+    if (previousProfilePhoto && previousProfilePhoto !== profilePhoto) {
+      await removeStoredProfilePhoto(previousProfilePhoto);
+    }
+
+    return res.json({
+      status: true,
+      message: "Profile picture updated successfully",
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone || null,
+        profile_photo: user.profile_photo || null,
+        role_id: user.role_id,
+        role_name: user.role_name,
+        role_slug: user.role_slug,
+        department_id: user.department_id || null,
+        department_name: user.department_name || null,
+        permissions: req.user.permissions,
+        last_login: user.last_login || null,
+        created_at: user.created_at || null,
+        two_factor_verified: req.user.two_factor_verified === true,
+        two_factor_enforced: isTwoFactorEnforced(),
+      },
+    });
+  } catch (error) {
+    await removeUploadedFile(req.file?.path);
+    return res.status(500).json({
+      status: false,
+      message: "Failed to update profile picture",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
@@ -701,6 +770,7 @@ module.exports = {
   getCurrentSession,
   resendTwoFactorCode,
   updateCurrentPassword,
+  updateCurrentProfilePhoto,
   updateCurrentProfile,
   verifyTwoFactor,
 };

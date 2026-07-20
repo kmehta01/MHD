@@ -180,6 +180,10 @@ const permissions = [
   ["roles", "update", "roles.update", "Update role permissions"],
   ["settings", "view", "settings.view", "View website settings"],
   ["settings", "update", "settings.update", "Change system settings"],
+  ["settings_general", "view", "settings.general.view", "View General Settings"],
+  ["settings_general", "update", "settings.general.update", "Update General Settings"],
+  ["settings_general", "reset", "settings.general.reset", "Restore default General Settings"],
+  ["settings_general", "history", "settings.general.history", "View General Settings change history"],
   ["reports", "view_all", "reports.view_all", "View all reports"],
   [
     "reports",
@@ -230,6 +234,7 @@ const rolePermissions = {
     "users.update",
     "users.delete",
     "users.manage_limited",
+    "settings.general.view",
     "reports.view_operational",
     "audit_logs.view_limited",
   ],

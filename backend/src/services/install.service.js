@@ -2,6 +2,9 @@ const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const {
+  generalSettingDefinitions,
+} = require("../utils/default-general-settings");
 
 const backendRoot = path.resolve(__dirname, "../..");
 const projectRoot = path.resolve(backendRoot, "..");
@@ -21,6 +24,8 @@ const installerTables = [
   "admin_auth_events",
   "role_permissions",
   "permissions",
+  "system_settings",
+  "system_setting_logs",
   "admin_users",
   "departments",
   "roles",
@@ -325,6 +330,33 @@ const createSuperAdmin = async (connection, config) => {
   );
 };
 
+const seedGeneralSettings = async (connection) => {
+  for (const definition of generalSettingDefinitions) {
+    const value = definition.valueType === "boolean"
+      ? (definition.defaultValue ? "1" : "0")
+      : definition.valueType === "json"
+        ? JSON.stringify(definition.defaultValue)
+        : String(definition.defaultValue ?? "");
+
+    await connection.query(
+      `INSERT INTO system_settings
+         (setting_group, setting_key, setting_value, value_type, is_public, is_encrypted)
+       VALUES (?, ?, ?, ?, ?, 0)
+       ON DUPLICATE KEY UPDATE
+         setting_group = VALUES(setting_group),
+         value_type = VALUES(value_type),
+         is_public = VALUES(is_public)`,
+      [
+        definition.group,
+        definition.settingKey,
+        value,
+        definition.valueType,
+        definition.isPublic ? 1 : 0,
+      ],
+    );
+  }
+};
+
 const writeEnvironmentFiles = (config) => {
   const backendEnv = buildEnv({
     APP_NAME: "MHD_BELIZE_WEBSITE",
@@ -399,6 +431,7 @@ const runInstaller = async (input = {}) => {
 
     await runSchema(connection);
     await createSuperAdmin(connection, config);
+    await seedGeneralSettings(connection);
     writeEnvironmentFiles(config);
     createInstallLock();
 

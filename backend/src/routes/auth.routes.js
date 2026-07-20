@@ -6,10 +6,14 @@ const {
   getCurrentSession,
   resendTwoFactorCode,
   updateCurrentPassword,
+  updateCurrentProfilePhoto,
   updateCurrentProfile,
   verifyTwoFactor,
 } = require("../controllers/auth.controller");
 const { verifyToken } = require("../middlewares/auth.middleware");
+const {
+  handleProfilePhotoUpload,
+} = require("../middlewares/profile-photo-upload.middleware");
 const {
   loginLimiter,
   twoFactorResendLimiter,
@@ -26,6 +30,12 @@ router.get("/test", (req, res) => {
 router.post("/login", loginLimiter, adminLogin);
 router.get("/me", verifyToken, getCurrentSession);
 router.patch("/profile", verifyToken, updateCurrentProfile);
+router.post(
+  "/profile/photo",
+  verifyToken,
+  handleProfilePhotoUpload,
+  updateCurrentProfilePhoto,
+);
 router.put("/password", verifyToken, updateCurrentPassword);
 router.post("/2fa/verify", twoFactorVerifyLimiter, verifyTwoFactor);
 router.post("/2fa/resend", twoFactorResendLimiter, resendTwoFactorCode);
