@@ -1,0 +1,141 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap");
+
+:root {
+  --brand-navy: #08213f;
+  --brand-navy-dark: #061a33;
+  --brand-blue: #2086c8;
+  --brand-blue-dark: #176fa8;
+  --brand-green: #adc75f;
+  --brand-green-dark: #71872f;
+  --brand-pink: #ed1d75;
+  --brand-yellow: #fdc939;
+  --brand-cream: #fef9e4;
+  --brand-blue-soft: #eaf5fb;
+  --brand-green-soft: #f1f6df;
+  --brand-pink-soft: #fff0f6;
+  --navy: var(--brand-navy);
+  --navy-900: var(--brand-navy-dark);
+  --navy-800: #0b3158;
+  --blue: var(--brand-blue);
+  --blue-600: var(--brand-blue-dark);
+  --gold: var(--brand-yellow);
+  --gold-100: var(--brand-cream);
+  --success: var(--brand-green-dark);
+  --warning: #ffc107;
+  --danger: #dc3545;
+  --background: #f5f8fb;
+  --card: #ffffff;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --line: #dfe8ef;
+  --line-soft: #ebf0f4;
+  --shadow-sm: 0 2px 8px rgba(8, 33, 63, 0.06);
+  --shadow-md: 0 12px 30px rgba(8, 33, 63, 0.1);
+  --font-body: "DM Sans", "Segoe UI", sans-serif;
+  --font-heading: "Manrope", "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--background);
+  font-family: var(--font-body);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: var(--background);
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--font-body);
+}
+
+button,
+input,
+select,
+textarea {
+  font-size: inherit;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+}
+
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  color: #fff;
+  background: var(--blue);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: #b9c5d2;
+  background-clip: padding-box;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(32, 134, 200, 0.32);
+  outline-offset: 2px;
+}
