@@ -191,6 +191,10 @@ const resolvePolicySelections = async (body, complaint, settings) => {
   if (categoryId && !category) throw buildClientError("Selected complaint category is unavailable");
   if (submittedDepartmentId && !department) throw buildClientError("Selected department is unavailable");
   if (locationId && !location) throw buildClientError("Selected location is unavailable");
+  if (categoryId && submittedDepartmentId &&
+      !await ConfigurationModel.findActiveCategoryMapping(submittedDepartmentId, categoryId)) {
+    throw buildClientError("Selected complaint category is not available for this department");
+  }
   if (!status) throw Object.assign(new Error("Configured default grievance status is unavailable"), { statusCode: 503 });
   if (!priority) throw Object.assign(new Error("Configured default grievance priority is unavailable"), { statusCode: 503 });
 

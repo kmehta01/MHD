@@ -5,16 +5,16 @@ import API from "../services/api";
 import { downloadBlob } from "../utils/download";
 
 const viewFilters = {
-  new: { status: "New" },
-  "under-review": { status: "Under Review" },
+  new: { status: "new" },
+  "under-review": { status: "under_review" },
   unassigned: { assignment: "unassigned" },
   assigned: { assignment: "assigned" },
-  "in-progress": { status: "In Progress" },
-  "pending-information": { status: "Pending Information" },
-  resolved: { status: "Resolved" },
-  closed: { status: "Closed" },
-  rejected: { status: "Rejected" },
-  duplicate: { status: "Duplicate" },
+  "in-progress": { status: "in_progress" },
+  "pending-information": { status: "pending_information" },
+  resolved: { status: "resolved" },
+  closed: { status: "closed" },
+  rejected: { status: "rejected" },
+  duplicate: { status: "duplicate" },
   overdue: { deadline: "overdue" },
   "due-today": { deadline: "due_today" },
 };
@@ -135,8 +135,8 @@ const ManageGrievances = () => {
     detailLoadedId !== selectedId;
   const selectedComplaint =
     loadedComplaint?.id === selectedId ? loadedComplaint : null;
-  const statuses = options.statuses.map((item) => item.name);
-  const priorities = options.priorities.map((item) => item.name);
+  const statuses = options.statuses.filter((item) => item.is_active);
+  const priorities = options.priorities.filter((item) => item.is_active);
 
   useEffect(() => {
     let active = true;
@@ -435,7 +435,7 @@ const ManageGrievances = () => {
           >
             <option value="">All statuses</option>
             {statuses.map((option) => (
-              <option key={option}>{option}</option>
+              <option key={option.id} value={option.status_key}>{option.name}</option>
             ))}
           </select>
           <select
@@ -445,7 +445,7 @@ const ManageGrievances = () => {
           >
             <option value="">All priorities</option>
             {priorities.map((option) => (
-              <option key={option}>{option}</option>
+              <option key={option.id} value={option.priority_key}>{option.name}</option>
             ))}
           </select>
           <button onClick={clearFilters} type="button">
@@ -521,14 +521,14 @@ const ManageGrievances = () => {
                       <td>{complaint.incidentLocation || "Not provided"}</td>
                       <td>
                         <span
-                          className={`priority-label ${String(complaint.ticketPriority).toLowerCase()}`}
+                          className={`priority-label ${statusClass(complaint.priorityKey)}`}
                         >
                           <i /> {complaint.ticketPriority}
                         </span>
                       </td>
                       <td>
                         <span
-                          className={`status-badge ${statusClass(complaint.status)}`}
+                          className={`status-badge ${statusClass(complaint.statusKey)}`}
                         >
                           {complaint.status}
                         </span>
@@ -734,7 +734,7 @@ const ManageGrievances = () => {
                       <dt>Status</dt>
                       <dd>
                         <span
-                          className={`status-badge ${statusClass(selectedComplaint.status)}`}
+                          className={`status-badge ${statusClass(selectedComplaint.statusKey)}`}
                         >
                           {selectedComplaint.status}
                         </span>
@@ -792,7 +792,7 @@ const ManageGrievances = () => {
                       <dt>Status</dt>
                       <dd>
                         <span
-                          className={`status-badge ${statusClass(selectedComplaint.status)}`}
+                          className={`status-badge ${statusClass(selectedComplaint.statusKey)}`}
                         >
                           {selectedComplaint.status}
                         </span>
@@ -864,7 +864,7 @@ const ManageGrievances = () => {
                     </select>
                     <select onChange={(event) => setAssignmentForm((current) => ({ ...current, priority: event.target.value }))} required value={assignmentForm.priority}>
                       <option value="">Select priority</option>
-                      {priorities.map((item) => <option key={item}>{item}</option>)}
+                      {priorities.map((item) => <option key={item.id} value={item.priority_key}>{item.name}</option>)}
                     </select>
                     <textarea onChange={(event) => setAssignmentForm((current) => ({ ...current, note: event.target.value }))} placeholder="Assignment note" required={options.policy.assignment.internalAssignmentNoteRequired} value={assignmentForm.note} />
                     <button className="button button-secondary" disabled={actionBusy} type="submit">Save assignment</button>
@@ -875,10 +875,10 @@ const ManageGrievances = () => {
                   <strong>Status transition</strong>
                   <select onChange={(event) => setStatusForm((current) => ({ ...current, status: event.target.value }))} required value={statusForm.status}>
                     <option value="">Select next status</option>
-                    {options.transitions.filter((transition) => transition.from_status === selectedComplaint.status).map((transition) => <option key={transition.id} value={transition.to_status}>{transition.to_status}</option>)}
+                    {options.transitions.filter((transition) => transition.is_active && transition.from_status_key === selectedComplaint.statusKey).map((transition) => <option key={transition.id} value={transition.to_status_key}>{transition.to_status}</option>)}
                   </select>
                   <textarea onChange={(event) => setStatusForm((current) => ({ ...current, comment: event.target.value }))} placeholder="Status change comment" required={options.policy?.workflow?.requireCommentOnStatusChange} value={statusForm.comment} />
-                  {statusForm.status === "Resolved" ? <><textarea onChange={(event) => setStatusForm((current) => ({ ...current, resolutionSummary: event.target.value }))} placeholder="Resolution summary" required value={statusForm.resolutionSummary} /><input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx" onChange={(event) => setStatusDocument(event.target.files?.[0] || null)} required={options.policy?.workflow?.requireResolutionDocument} type="file" /></> : null}
+                  {options.statuses.find((item) => item.status_key === statusForm.status)?.reporting_group === "resolved" ? <><textarea onChange={(event) => setStatusForm((current) => ({ ...current, resolutionSummary: event.target.value }))} placeholder="Resolution summary" required value={statusForm.resolutionSummary} /><input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx" onChange={(event) => setStatusDocument(event.target.files?.[0] || null)} required={options.policy?.workflow?.requireResolutionDocument} type="file" /></> : null}
                   <button className="button button-primary" disabled={actionBusy || !statusForm.status} type="submit">Update status</button>
                 </form>
 

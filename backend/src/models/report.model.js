@@ -56,13 +56,13 @@ const loadRows = async ({ filters, maximumRecords }) => {
   const conditions = [];
   const values = [];
   if (filters.departmentId) { conditions.push("c.assigned_department_id=?"); values.push(filters.departmentId); }
-  if (filters.status) { conditions.push("c.status=?"); values.push(filters.status); }
-  if (filters.priority) { conditions.push("c.ticket_priority=?"); values.push(filters.priority); }
+  if (filters.statusId) { conditions.push("c.status_id=?"); values.push(filters.statusId); }
+  if (filters.priorityId) { conditions.push("c.priority_id=?"); values.push(filters.priorityId); }
   if (filters.dateFrom) { conditions.push("c.created_at>=?"); values.push(`${filters.dateFrom} 00:00:00`); }
   if (filters.dateTo) { conditions.push("c.created_at<?"); values.push(`${filters.dateTo} 23:59:59`); }
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
   const [rows] = await db.query(
-    `SELECT c.token_number, c.status, c.ticket_priority, c.created_at, c.updated_at,
+    `SELECT c.token_number, s.name AS status, p.name AS ticket_priority, c.created_at, c.updated_at,
             c.due_at, c.resolved_at, c.closed_at, c.comp_name, c.comp_phone,
             c.comp_email, c.identification_number_last4, c.submission_type,
             c.issue_other, c.incident_location, c.description,
@@ -70,6 +70,8 @@ const loadRows = async ({ filters, maximumRecords }) => {
      FROM complaints c LEFT JOIN departments d ON d.id=c.assigned_department_id
      LEFT JOIN complaint_categories cc ON cc.id=c.category_id
      LEFT JOIN complaint_locations cl ON cl.id=c.location_id
+     JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_priorities p ON p.id=c.priority_id
      ${where} ORDER BY c.created_at DESC, c.id DESC LIMIT ?`,
     [...values, maximumRecords],
   );

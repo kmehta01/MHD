@@ -14,6 +14,8 @@
     "migrate:general-settings": "node scripts/apply-general-settings-migration.js",
     "migrate:runtime-settings": "node scripts/apply-runtime-settings-migration.js",
     "migrate:grievance-lifecycle": "node scripts/apply-grievance-lifecycle-migration.js",
+    "migrate:master-data": "node scripts/apply-master-data-migration.js",
+    "migrate:all": "node scripts/migrate-all.js",
     "migrate:operational-runtime": "node scripts/apply-operational-runtime-migration.js",
     "migrate:ticket-number": "node scripts/apply-ticket-number-migration.js",
     "audit:general-settings": "node scripts/audit-general-settings.js",

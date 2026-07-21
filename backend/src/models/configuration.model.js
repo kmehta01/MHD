@@ -2,16 +2,26 @@ const db = require("../config/db");
 
 const listPublicCatalog = async () => {
   const [[categories], [locations], [departments]] = await Promise.all([
-    db.query(`SELECT id, code, name FROM complaint_categories WHERE is_active=1 ORDER BY name`),
+    db.query(`SELECT c.id, c.code, c.name,
+      GROUP_CONCAT(DISTINCT CASE WHEN m.is_active=1 AND d.is_active=1 THEN m.department_id END ORDER BY m.department_id SEPARATOR ',') AS department_ids
+      FROM complaint_categories c
+      LEFT JOIN department_category_mappings m ON m.category_id=c.id AND m.is_active=1
+      LEFT JOIN departments d ON d.id=m.department_id AND d.is_active=1
+      WHERE c.is_active=1 GROUP BY c.id ORDER BY c.name`),
     db.query(`SELECT id, code, name FROM complaint_locations WHERE is_active=1 ORDER BY name`),
     db.query(`SELECT id, code, name FROM departments WHERE is_active=1 ORDER BY name`),
   ]);
-  return { categories, locations, departments };
+  return { categories: categories.map((row) => ({
+    ...row,
+    departmentIds: String(row.department_ids || "").split(",").filter(Boolean).map(Number),
+    department_ids: undefined,
+  })), locations, departments };
 };
 
 const catalogTables = Object.freeze({
   categories: "complaint_categories",
   locations: "complaint_locations",
+  departments: "departments",
 });
 
 const listCatalog = async (catalog) => {
@@ -28,14 +38,16 @@ const saveCatalogItem = async (catalog, item) => {
   if (!table) throw Object.assign(new Error("Unsupported catalog"), { statusCode: 400 });
   if (item.id) {
     const [result] = await db.query(
-      `UPDATE ${table} SET code=?, name=?, is_active=? WHERE id=?`,
-      [item.code, item.name, item.isActive ? 1 : 0, item.id],
+      `UPDATE ${table} SET name=?, is_active=? WHERE id=?`,
+      [item.name, item.isActive ? 1 : 0, item.id],
     );
     return Number(result.affectedRows) ? Number(item.id) : null;
   }
   const [result] = await db.query(
-    `INSERT INTO ${table} (code, name, is_active) VALUES (?, ?, ?)`,
-    [item.code, item.name, item.isActive ? 1 : 0],
+    `INSERT INTO ${table} (${catalog === "departments" ? "code, slug, name" : "code, name"}, is_active) VALUES (${catalog === "departments" ? "?, ?, ?" : "?, ?"}, ?)`,
+    catalog === "departments"
+      ? [item.code, item.code.toLowerCase(), item.name, item.isActive ? 1 : 0]
+      : [item.code, item.name, item.isActive ? 1 : 0],
   );
   return result.insertId;
 };
@@ -49,9 +61,9 @@ const deactivateCatalogItem = async (catalog, id) => {
 
 const listWorkflow = async () => {
   const [[statuses], [priorities], [transitions]] = await Promise.all([
-    db.query(`SELECT id, status_key, name, is_final, is_active, sort_order FROM complaint_statuses ORDER BY sort_order, id`),
-    db.query(`SELECT id, priority_key, name, is_active, sort_order FROM complaint_priorities ORDER BY sort_order, id`),
-    db.query(`SELECT t.id, t.from_status_id, fs.name AS from_status, t.to_status_id, ts.name AS to_status, t.is_active
+    db.query(`SELECT id, status_key, name, reporting_group, notification_event, is_final, is_system, is_active, sort_order FROM complaint_statuses ORDER BY sort_order, id`),
+    db.query(`SELECT id, priority_key, name, is_high_priority, is_system, is_active, sort_order FROM complaint_priorities ORDER BY sort_order, id`),
+    db.query(`SELECT t.id, t.from_status_id, fs.status_key AS from_status_key, fs.name AS from_status, t.to_status_id, ts.status_key AS to_status_key, ts.name AS to_status, t.is_active
               FROM workflow_transitions t
               JOIN complaint_statuses fs ON fs.id=t.from_status_id
               JOIN complaint_statuses ts ON ts.id=t.to_status_id
@@ -81,18 +93,116 @@ const findActiveCatalogItem = async (table, id, executor = db) => {
 
 const findStatusByName = async (name, executor = db) => {
   const [rows] = await executor.query(
-    `SELECT id, status_key, name, is_final FROM complaint_statuses WHERE name=? AND is_active=1 LIMIT 1`,
-    [name],
+    `SELECT id, status_key, name, reporting_group, notification_event, is_final FROM complaint_statuses WHERE (status_key=? OR name=?) AND is_active=1 LIMIT 1`,
+    [name, name],
   );
   return rows[0] || null;
 };
 
 const findPriorityByName = async (name, executor = db) => {
   const [rows] = await executor.query(
-    `SELECT id, priority_key, name FROM complaint_priorities WHERE name=? AND is_active=1 LIMIT 1`,
-    [name],
+    `SELECT id, priority_key, name, is_high_priority FROM complaint_priorities WHERE (priority_key=? OR name=?) AND is_active=1 LIMIT 1`,
+    [name, name],
   );
   return rows[0] || null;
+};
+
+const findActiveCategoryMapping = async (departmentId, categoryId, executor = db) => {
+  const [rows] = await executor.query(
+    `SELECT 1 FROM department_category_mappings m
+      JOIN departments d ON d.id=m.department_id AND d.is_active=1
+      JOIN complaint_categories c ON c.id=m.category_id AND c.is_active=1
+      WHERE m.department_id=? AND m.category_id=? AND m.is_active=1 LIMIT 1`,
+    [departmentId, categoryId],
+  );
+  return Boolean(rows[0]);
+};
+
+const saveCategoryMappings = async (categoryId, departmentIds) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    await connection.query(`UPDATE department_category_mappings SET is_active=0 WHERE category_id=?`, [categoryId]);
+    for (const departmentId of departmentIds) {
+      await connection.query(
+        `INSERT INTO department_category_mappings (category_id, department_id, is_active) VALUES (?, ?, 1)
+         ON DUPLICATE KEY UPDATE is_active=1`, [categoryId, departmentId],
+      );
+    }
+    await connection.commit();
+  } catch (error) { await connection.rollback(); throw error; }
+  finally { connection.release(); }
+};
+
+const saveStatus = async (item) => {
+  if (item.id) {
+    const [existing] = await db.query(`SELECT reporting_group, notification_event, is_final, is_system, is_active FROM complaint_statuses WHERE id=?`, [item.id]);
+    if (!existing[0]) return null;
+    const protectedItem = Boolean(existing[0].is_system);
+    const [result] = await db.query(
+      `UPDATE complaint_statuses SET name=?, reporting_group=?, notification_event=?, is_final=?, is_active=?, sort_order=? WHERE id=?`,
+      [item.name, protectedItem ? existing[0].reporting_group : item.reportingGroup,
+        protectedItem ? existing[0].notification_event : item.notificationEvent,
+        protectedItem ? existing[0].is_final : item.isFinal,
+        protectedItem ? existing[0].is_active : item.isActive, item.sortOrder, item.id],
+    );
+    return result.affectedRows || result.changedRows ? item.id : item.id;
+  }
+  const [result] = await db.query(
+    `INSERT INTO complaint_statuses (status_key,name,reporting_group,notification_event,is_final,is_active,sort_order) VALUES (?,?,?,?,?,?,?)`,
+    [item.key, item.name, item.reportingGroup, item.notificationEvent, item.isFinal, item.isActive, item.sortOrder],
+  );
+  return result.insertId;
+};
+
+const savePriority = async (item) => {
+  if (item.id) {
+    const [result] = await db.query(
+      `UPDATE complaint_priorities SET name=?, is_high_priority=?, is_active=?, sort_order=? WHERE id=?`,
+      [item.name, item.isHighPriority, item.isActive, item.sortOrder, item.id],
+    );
+    return result.affectedRows || result.changedRows ? item.id : item.id;
+  }
+  const [result] = await db.query(
+    `INSERT INTO complaint_priorities (priority_key,name,is_high_priority,is_active,sort_order) VALUES (?,?,?,?,?)`,
+    [item.key, item.name, item.isHighPriority, item.isActive, item.sortOrder],
+  );
+  return result.insertId;
+};
+
+const saveTransition = async ({ fromStatusId, toStatusId, isActive }) => {
+  const [result] = await db.query(
+    `INSERT INTO workflow_transitions (from_status_id,to_status_id,is_active) VALUES (?,?,?)
+     ON DUPLICATE KEY UPDATE is_active=VALUES(is_active), id=LAST_INSERT_ID(id)`,
+    [fromStatusId, toStatusId, isActive],
+  );
+  return result.insertId;
+};
+
+const getDeactivationDependencies = async (type, id) => {
+  const queries = {
+    departments: [
+      [`SELECT COUNT(*) count FROM admin_users WHERE department_id=? AND status='active'`, "activeUsers"],
+      [`SELECT COUNT(*) count FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE (c.assigned_department_id=? OR c.submitted_department_id=?) AND s.is_final=0`, "activeComplaints", true],
+    ],
+    categories: [[`SELECT COUNT(*) count FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.category_id=? AND s.is_final=0`, "activeComplaints"]],
+    locations: [[`SELECT COUNT(*) count FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.location_id=? AND s.is_final=0`, "activeComplaints"]],
+    statuses: [
+      [`SELECT COUNT(*) count FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.status_id=? AND s.is_final=0`, "activeComplaints"],
+      [`SELECT COUNT(*) count FROM workflow_transitions WHERE (from_status_id=? OR to_status_id=?) AND is_active=1`, "activeTransitions", true],
+      [`SELECT COUNT(*) count FROM system_settings gs JOIN complaint_statuses ms ON ms.status_key=gs.setting_value WHERE gs.setting_key='workflow.defaultNewGrievanceStatus' AND ms.id=?`, "configuredDefaults"],
+    ],
+    priorities: [
+      [`SELECT COUNT(*) count FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.priority_id=? AND s.is_final=0`, "activeComplaints"],
+      [`SELECT COUNT(*) count FROM system_settings gs JOIN complaint_priorities mp ON mp.priority_key=gs.setting_value WHERE gs.setting_key='assignment.defaultAssignmentPriority' AND mp.id=?`, "configuredDefaults"],
+    ],
+  };
+  const dependencies = {};
+  for (const [sql, key, twice] of queries[type] || []) {
+    const [rows] = await db.query(sql, twice ? [id, id] : [id]);
+    dependencies[key] = Number(rows[0]?.count || 0);
+  }
+  return dependencies;
 };
 
 const findRoutingRule = async ({ matchTypes, categoryId, departmentId, locationId }, executor = db) => {
@@ -182,7 +292,8 @@ const deactivateHoliday = async (id) => {
 
 module.exports = {
   createRoutingRule, deactivateCatalogItem, deactivateHoliday, deactivateRoutingRule,
-  findActiveCatalogItem, findPriorityByName, findRoutingRule, findStatusByName,
+  findActiveCatalogItem, findActiveCategoryMapping, findPriorityByName, findRoutingRule, findStatusByName,
+  getDeactivationDependencies,
   listAssignableOfficers, listCatalog, listHolidays, listPublicCatalog,
-  listRoutingRules, listWorkflow, saveCatalogItem, saveHoliday, updateRoutingRule,
+  listRoutingRules, listWorkflow, saveCatalogItem, saveCategoryMappings, saveHoliday, savePriority, saveStatus, saveTransition, updateRoutingRule,
 };

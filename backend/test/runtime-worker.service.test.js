@@ -14,7 +14,7 @@ test("automatic overdue policy persists the mark and emits an idempotent event",
   const dueAt = new Date("2026-07-01T12:00:00.000Z");
   const query = async (sql, values = []) => {
     queries.push({ sql, values });
-    if (sql.includes("SELECT id, due_at FROM complaints")) return [[{ id: 44, due_at: dueAt }]];
+    if (sql.includes("complaint_statuses") && sql.includes("due_at<NOW()")) return [[{ id: 44, due_at: dueAt }]];
     return [{ affectedRows: 1 }];
   };
 

@@ -1,6 +1,7 @@
 const SettingsModel = require("../models/settings.model");
 const SettingsService = require("../services/settings.service");
 const SettingsPolicy = require("../services/settings-policy.service");
+const ConfigurationModel = require("../models/configuration.model");
 const {
   removeSettingsFile,
   removeStoredSettingsFile,
@@ -29,13 +30,18 @@ const getRuntimeCapabilities = () => {
   };
 };
 
-const buildResponseMeta = async (user, updateMeta = null, knownVersion = null) => ({
-  capabilities: getCapabilities(user),
-  runtime_capabilities: getRuntimeCapabilities(),
-  last_updated_at: updateMeta?.updated_at || null,
-  last_updated_by: updateMeta?.updated_by_name || null,
-  version: knownVersion ?? await SettingsService.getGeneralSettingsVersion(),
-});
+const buildResponseMeta = async (user, updateMeta = null, knownVersion = null) => {
+  const workflow = await ConfigurationModel.listWorkflow();
+  return {
+    capabilities: getCapabilities(user), runtime_capabilities: getRuntimeCapabilities(),
+    master_options: {
+      statuses: workflow.statuses.filter((item) => item.is_active).map((item) => ({ value: item.status_key, label: item.name })),
+      priorities: workflow.priorities.filter((item) => item.is_active).map((item) => ({ value: item.priority_key, label: item.name })),
+    },
+    last_updated_at: updateMeta?.updated_at || null, last_updated_by: updateMeta?.updated_by_name || null,
+    version: knownVersion ?? await SettingsService.getGeneralSettingsVersion(),
+  };
+};
 
 const getGeneralSettings = async (req, res) => {
   try {

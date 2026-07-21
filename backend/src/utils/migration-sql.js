@@ -50,4 +50,35 @@ const adaptForeignKeyColumnTypes = async (connection, sql) => {
 const readCompatibleMigration = async (connection, migrationPath) =>
   adaptForeignKeyColumnTypes(connection, fs.readFileSync(migrationPath, "utf8"));
 
-module.exports = { adaptForeignKeyColumnTypes, foreignKeyReferences, readCompatibleMigration };
+const ensureForeignKeys = async (connection, definitions) => {
+  const [existing] = await connection.query(
+    `SELECT CONSTRAINT_NAME FROM information_schema.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE()`,
+  );
+  const names = new Set(existing.map((row) => row.CONSTRAINT_NAME));
+  for (const [name, childTable, childColumn, parentTable, parentColumn] of definitions) {
+    if (names.has(name)) continue;
+    const identifiers = [name, childTable, childColumn, parentTable, parentColumn];
+    if (identifiers.some((value) => !/^[A-Za-z0-9_]+$/.test(value))) throw new Error("Unsafe foreign-key identifier");
+    const [columns] = await connection.query(
+      `SELECT TABLE_NAME, COLUMN_NAME, COLUMN_TYPE, IS_NULLABLE
+         FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE()
+          AND ((TABLE_NAME=? AND COLUMN_NAME=?) OR (TABLE_NAME=? AND COLUMN_NAME=?))`,
+      [childTable, childColumn, parentTable, parentColumn],
+    );
+    const child = columns.find((column) => column.TABLE_NAME === childTable && column.COLUMN_NAME === childColumn);
+    const parent = columns.find((column) => column.TABLE_NAME === parentTable && column.COLUMN_NAME === parentColumn);
+    const parentType = compatibleIntegerType(parent?.COLUMN_TYPE);
+    if (!child || !parentType) throw new Error(`Foreign-key columns are unavailable for ${name}`);
+    if (String(child.COLUMN_TYPE).toLowerCase() !== String(parent.COLUMN_TYPE).toLowerCase()) {
+      await connection.query(
+        `ALTER TABLE \`${childTable}\` MODIFY COLUMN \`${childColumn}\` ${parentType} ${child.IS_NULLABLE === "YES" ? "NULL" : "NOT NULL"}`,
+      );
+    }
+    await connection.query(
+      `ALTER TABLE \`${childTable}\` ADD CONSTRAINT \`${name}\` FOREIGN KEY (\`${childColumn}\`) REFERENCES \`${parentTable}\` (\`${parentColumn}\`)`,
+    );
+  }
+};
+
+module.exports = { adaptForeignKeyColumnTypes, ensureForeignKeys, foreignKeyReferences, readCompatibleMigration };

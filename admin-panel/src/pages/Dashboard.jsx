@@ -79,7 +79,7 @@ const overviewCards = [
     label: "High-Priority Grievances",
     icon: "alert",
     tone: "red",
-    path: "/grievances?priority=High",
+    path: "/grievances?priority=high",
   },
   {
     key: "due_today",

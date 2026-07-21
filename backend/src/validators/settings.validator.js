@@ -170,6 +170,17 @@ const validateGeneralSettingsPayload = async (req, res, next) => {
     group, { ...values, ...(normalized[group] || {}) },
   ]));
   validateConditionalRules(conditionSettings, errors);
+  try {
+    const workflow = await ConfigurationModel.listWorkflow();
+    if (!workflow.statuses.some((item) => item.is_active && item.status_key === conditionSettings.workflow.defaultNewGrievanceStatus)) {
+      errors["workflow.defaultNewGrievanceStatus"] = "Select an active workflow status";
+    }
+    if (!workflow.priorities.some((item) => item.is_active && item.priority_key === conditionSettings.assignment.defaultAssignmentPriority)) {
+      errors["assignment.defaultAssignmentPriority"] = "Select an active complaint priority";
+    }
+  } catch {
+    errors["workflow.defaultNewGrievanceStatus"] = "Master-data defaults could not be verified";
+  }
   const capabilities = SettingsPolicy.getRuntimeCapabilities();
   const enabling = (group, key) =>
     conditionSettings[group][key] === true && currentSettings[group][key] !== true;
@@ -193,7 +204,7 @@ const validateGeneralSettingsPayload = async (req, res, next) => {
     try {
       const workflow = await ConfigurationModel.listWorkflow();
       const validTransition = workflow.transitions.some((transition) =>
-        transition.is_active && transition.from_status === "Resolved" && transition.to_status === "Closed");
+        transition.is_active && transition.from_status_key === "resolved" && transition.to_status_key === "closed");
       if (!validTransition) errors["workflow.autoCloseResolvedGrievances"] = "Auto-close requires an active Resolved to Closed transition";
     } catch {
       errors["workflow.autoCloseResolvedGrievances"] = "Workflow dependencies could not be verified";

@@ -3,7 +3,7 @@ const path = require("path");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const { readCompatibleMigration } = require("../utils/migration-sql");
+const { ensureForeignKeys, readCompatibleMigration } = require("../utils/migration-sql");
 const {
   generalSettingDefinitions,
 } = require("../utils/default-general-settings");
@@ -19,7 +19,16 @@ const sqlPath = path.join(projectRoot, "database", "database.sql");
 const installMigrationPaths = [
   path.join(projectRoot, "database", "migrations", "20260720_runtime_general_settings.sql"),
   path.join(projectRoot, "database", "migrations", "20260720_grievance_lifecycle.sql"),
+  path.join(projectRoot, "database", "migrations", "20260721_master_data_runtime.sql"),
   path.join(projectRoot, "database", "migrations", "20260720_operational_runtime.sql"),
+];
+const masterDataForeignKeys = [
+  ["fk_complaints_status", "complaints", "status_id", "complaint_statuses", "id"],
+  ["fk_complaints_priority", "complaints", "priority_id", "complaint_priorities", "id"],
+  ["fk_complaints_category", "complaints", "category_id", "complaint_categories", "id"],
+  ["fk_complaints_location", "complaints", "location_id", "complaint_locations", "id"],
+  ["fk_complaints_submitted_department", "complaints", "submitted_department_id", "departments", "id"],
+  ["fk_complaints_assigned_department", "complaints", "assigned_department_id", "departments", "id"],
 ];
 
 const installerTables = [
@@ -37,6 +46,7 @@ const installerTables = [
   "complaint_status_history",
   "assignment_routing_rules",
   "workflow_transitions",
+  "department_category_mappings",
   "complaint_locations",
   "complaint_categories",
   "complaint_priorities",
@@ -337,6 +347,7 @@ const runSchema = async (connection) => {
     }
     await connection.query(await readCompatibleMigration(connection, migrationPath));
   }
+  await ensureForeignKeys(connection, masterDataForeignKeys);
 };
 
 const createSuperAdmin = async (connection, config) => {

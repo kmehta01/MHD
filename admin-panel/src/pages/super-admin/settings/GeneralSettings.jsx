@@ -133,6 +133,7 @@ const GeneralSettings = () => {
       ? Boolean(meta?.runtime_capabilities?.[field.runtimeCapability]?.configured)
       : true;
     const runtimeBlocked = !runtimeReady && !value;
+    const fieldOptions = field.dynamicOptions ? (meta?.master_options?.[field.dynamicOptions] || []) : (field.options || []);
     if (field.showWhen && settings[group]?.[field.showWhen[0]] !== field.showWhen[1]) return null;
 
     if (field.type === "toggle") {
@@ -177,7 +178,7 @@ const GeneralSettings = () => {
             <textarea disabled={readOnly} id={fieldId} onChange={(event) => setField(group, field.key, event.target.value)} rows={field.rows || 4} value={value ?? ""} />
           ) : field.type === "select" ? (
             <select disabled={readOnly} id={fieldId} onChange={(event) => setField(group, field.key, event.target.value)} value={value ?? ""}>
-              {field.options.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+              {fieldOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
             </select>
           ) : (
             <input disabled={readOnly} id={fieldId} max={field.max} maxLength={field.maxLength} min={field.min} onChange={(event) => setField(group, field.key, field.type === "number" ? Number(event.target.value) : event.target.value)} required={field.required} type={field.type || "text"} value={value ?? ""} />
@@ -223,7 +224,7 @@ const GeneralSettings = () => {
         <main className="general-settings-content">
           {visibleSections.map((section) => (
             <SettingsSection description={section.description} icon={section.icon} id={section.id} key={section.id} title={section.title}>
-              {section.preview === "workflow" ? <div className="settings-workflow-preview" aria-label="Default grievance workflow">{["New", "Under Review", "In Progress", "Resolved", "Closed"].map((status, index, statuses) => <span key={status}><b>{index + 1}</b>{status}{index < statuses.length - 1 ? <Icon name="chevronRight" size={14} /> : null}</span>)}</div> : null}
+              {section.preview === "workflow" ? <div className="settings-workflow-preview" aria-label="Default grievance workflow">{(meta?.master_options?.statuses || []).map((status, index, statuses) => <span key={status.value}><b>{index + 1}</b>{status.label}{index < statuses.length - 1 ? <Icon name="chevronRight" size={14} /> : null}</span>)}</div> : null}
               <div className="general-settings-form-grid">{section.fields.map((field) => renderField(section, field))}</div>
               {section.preview === "dashboard" ? <DashboardPreview settings={settings.dashboard} /> : null}
             </SettingsSection>

@@ -31,9 +31,10 @@ const findTemplate = async (eventType, channel, executor = db) => {
 
 const findComplaintContext = async (complaintId) => {
   const [rows] = await db.query(
-    `SELECT c.id, c.token_number, c.comp_name, c.comp_email, c.status, c.due_at,
+    `SELECT c.id, c.token_number, c.comp_name, c.comp_email, s.name AS status, s.status_key, c.due_at,
             c.assigned_department_id, d.name AS department_name
      FROM complaints c LEFT JOIN departments d ON d.id=c.assigned_department_id
+     JOIN complaint_statuses s ON s.id=c.status_id
      WHERE c.id=? LIMIT 1`, [complaintId],
   );
   return rows[0] || null;

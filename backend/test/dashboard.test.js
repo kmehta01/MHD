@@ -4,6 +4,7 @@ const {
   buildDashboardPayload,
   buildMonthlyTrend,
   fillSeries,
+  fillMasterSeries,
   getDashboardAnchors,
 } = require("../src/controllers/dashboard.controller");
 const { getScopeFilter } = require("../src/models/dashboard.model");
@@ -23,6 +24,16 @@ test("dashboard fills missing status and priority values with zero", () => {
       { label: "Closed", value: 2 },
     ],
   );
+});
+
+test("dashboard labels follow renamed master data while counts remain keyed", () => {
+  assert.deepEqual(fillMasterSeries([
+    { status_key: "new", name: "Received", is_active: 1 },
+    { status_key: "resolved", name: "Completed", is_active: 1 },
+  ], [{ master_key: "new", label: "Old label", value: 3 }], "status_key"), [
+    { key: "new", label: "Received", value: 3 },
+    { key: "resolved", label: "Completed", value: 0 },
+  ]);
 });
 
 test("dashboard trend always contains the latest 12 Belize calendar months", () => {

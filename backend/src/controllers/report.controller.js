@@ -21,9 +21,16 @@ const createReport = async (req, res) => {
     const scope = getGrievanceScope(req.user);
     if (scope.type === "none") return res.status(403).json({ status: false, message: "A department assignment is required" });
     const datePattern = /^\d{4}-\d{2}-\d{2}$/;
+    const workflow = await ConfigurationModel.listWorkflow();
+    const statusRef = String(req.body.status || "").trim();
+    const priorityRef = String(req.body.priority || "").trim();
+    const status = statusRef ? workflow.statuses.find((item) => item.is_active && (item.status_key === statusRef || item.name === statusRef)) : null;
+    const priority = priorityRef ? workflow.priorities.find((item) => item.is_active && (item.priority_key === priorityRef || item.name === priorityRef)) : null;
+    if (statusRef && !status) return res.status(400).json({ status: false, message: "Invalid status filter" });
+    if (priorityRef && !priority) return res.status(400).json({ status: false, message: "Invalid priority filter" });
     const filters = {
-      status: String(req.body.status || "").trim() || null,
-      priority: String(req.body.priority || "").trim() || null,
+      statusId: status?.id || null,
+      priorityId: priority?.id || null,
       dateFrom: datePattern.test(req.body.dateFrom) ? req.body.dateFrom : null,
       dateTo: datePattern.test(req.body.dateTo) ? req.body.dateTo : null,
       departmentId: scope.type === "department" ? scope.departmentId : (Number(req.body.departmentId) || null),

@@ -19,7 +19,7 @@ const findState = async (complaintId, executor = db, lock = false) => {
   const [rows] = await executor.query(
     `SELECT c.id, c.status_id, c.status, c.priority_id, c.ticket_priority,
             c.assigned_department_id, c.assigned_officer_id, c.due_at,
-            c.resolved_at, c.closed_at, s.status_key, s.is_final
+            c.resolved_at, c.closed_at, s.status_key, s.reporting_group, s.is_final
      FROM complaints c
      LEFT JOIN complaint_statuses s ON s.id=c.status_id
      WHERE c.id=? LIMIT 1${lock ? " FOR UPDATE" : ""}`,
@@ -30,7 +30,7 @@ const findState = async (complaintId, executor = db, lock = false) => {
 
 const findStatus = async (statusRef, executor = db) => {
   const [rows] = await executor.query(
-    `SELECT id, status_key, name, is_final FROM complaint_statuses
+    `SELECT id, status_key, name, reporting_group, notification_event, is_final FROM complaint_statuses
      WHERE is_active=1 AND (id=? OR status_key=? OR name=?) LIMIT 1`,
     [Number(statusRef) || 0, String(statusRef || ""), String(statusRef || "")],
   );
@@ -39,7 +39,7 @@ const findStatus = async (statusRef, executor = db) => {
 
 const findPriority = async (priorityRef, executor = db) => {
   const [rows] = await executor.query(
-    `SELECT id, priority_key, name FROM complaint_priorities
+    `SELECT id, priority_key, name, is_high_priority FROM complaint_priorities
      WHERE is_active=1 AND (id=? OR priority_key=? OR name=?) LIMIT 1`,
     [Number(priorityRef) || 0, String(priorityRef || ""), String(priorityRef || "")],
   );
@@ -100,16 +100,16 @@ const transition = async ({ complaintId, toStatusRef, comment, actorId, resoluti
     if (!await isTransitionAllowed(fromStatus.id, toStatus.id, connection)) {
       throw Object.assign(new Error(`Transition from ${fromStatus.name} to ${toStatus.name} is not allowed`), { statusCode: 409 });
     }
-    const resolvedAt = toStatus.status_key === "resolved" ? new Date() : null;
-    const closedAt = toStatus.status_key === "closed" ? new Date() : null;
+    const resolvedAt = toStatus.reporting_group === "resolved" ? new Date() : null;
+    const closedAt = toStatus.reporting_group === "closed" ? new Date() : null;
     await connection.query(
       `UPDATE complaints SET status_id=?, status=?,
-       resolved_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='in_progress' THEN NULL ELSE resolved_at END,
-       closed_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='in_progress' THEN NULL ELSE closed_at END,
+       resolved_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='open' THEN NULL ELSE resolved_at END,
+       closed_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='open' THEN NULL ELSE closed_at END,
        resolution_summary=COALESCE(?, resolution_summary)
        WHERE id=?`,
-      [toStatus.id, toStatus.name, resolvedAt, resolvedAt, toStatus.status_key,
-        closedAt, closedAt, toStatus.status_key, resolutionSummary, complaintId],
+      [toStatus.id, toStatus.name, resolvedAt, resolvedAt, toStatus.reporting_group,
+        closedAt, closedAt, toStatus.reporting_group, resolutionSummary, complaintId],
     );
     await connection.query(
       `INSERT INTO complaint_status_history (complaint_id, from_status_id, to_status_id, comment, changed_by)
@@ -238,8 +238,8 @@ const findResolutionDocument = async ({ complaintId, documentId, scope }) => {
 
 const listOpenForDueDateRecalculation = async (limit = 500) => {
   const [rows] = await db.query(
-    `SELECT id, token_number, created_at, due_at, status FROM complaints
-     WHERE status NOT IN ('Closed','Rejected','Duplicate') ORDER BY created_at, id LIMIT ?`,
+    `SELECT c.id, c.token_number, c.created_at, c.due_at, s.name AS status, s.status_key FROM complaints c
+     JOIN complaint_statuses s ON s.id=c.status_id WHERE s.reporting_group='open' ORDER BY c.created_at, c.id LIMIT ?`,
     [Math.min(5000, Math.max(1, Number(limit) || 500))],
   );
   return rows;

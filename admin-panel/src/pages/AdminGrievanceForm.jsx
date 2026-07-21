@@ -196,10 +196,12 @@ const AdminGrievanceForm = () => {
 
   const update = (event) => {
     const { checked, name, type, value } = event.target;
-    setForm((current) => ({
-      ...current,
-      [name]: type === "checkbox" ? checked : value,
-    }));
+    setForm((current) => {
+      const next = { ...current, [name]: type === "checkbox" ? checked : value };
+      if (name === "department_id" && current.category_id &&
+          !catalog.categories.find((item) => String(item.id) === String(current.category_id))?.departmentIds?.map(String).includes(String(value))) next.category_id = "";
+      return next;
+    });
     setError("");
   };
 
@@ -481,7 +483,7 @@ const AdminGrievanceForm = () => {
           <section>
             <div className="admin-grievance-section-heading"><span>02</span><div><h2>Grievance details</h2><p>Describe the concern and the outcome being requested.</p></div></div>
             <div className="admin-grievance-grid">
-              {submissionPolicy?.allowCitizenCategorySelection ? <label><span>Complaint category *</span><select name="category_id" onChange={update} value={form.category_id}><option value="">Select category</option>{catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
+              {submissionPolicy?.allowCitizenCategorySelection ? <label><span>Complaint category *</span><select name="category_id" onChange={update} value={form.category_id}><option value="">Select category</option>{catalog.categories.filter((item) => !form.department_id || (item.departmentIds || []).map(String).includes(String(form.department_id))).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
               {submissionPolicy?.allowCitizenDepartmentSelection ? <label><span>Department *</span><select name="department_id" onChange={update} value={form.department_id}><option value="">Select department</option>{catalog.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
               <label><span>District or service location</span><select name="location_id" onChange={update} value={form.location_id}><option value="">Select location</option>{catalog.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             </div>

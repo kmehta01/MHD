@@ -387,6 +387,14 @@ const createComplaintTables = async (connection) => {
 const run = async () => {
   const connection = await db.getConnection();
   try {
+    const [masterColumns] = await connection.query(
+      `SELECT 1 FROM information_schema.COLUMNS
+       WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='complaints' AND COLUMN_NAME='status_id' LIMIT 1`,
+    );
+    if (masterColumns.length) {
+      console.log("Complaint ticket migration already superseded by master-data schema; legacy enum conversion skipped.");
+      return;
+    }
     await createComplaintTables(connection);
     console.log("Complaint ticket migration complete.");
   } finally {

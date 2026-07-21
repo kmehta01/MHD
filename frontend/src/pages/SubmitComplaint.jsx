@@ -236,6 +236,10 @@ function SubmitComplaint() {
     ].filter(Boolean),
     [catalog.categories, form.category_id, form.issue_other],
   );
+  const availableCategories = useMemo(() => !form.department_id
+    ? catalog.categories
+    : catalog.categories.filter((item) => (item.departmentIds || []).map(String).includes(String(form.department_id))),
+  [catalog.categories, form.department_id]);
 
   useEffect(() => {
     let active = true;
@@ -322,6 +326,10 @@ function SubmitComplaint() {
         ...current,
         [name]: type === "checkbox" ? checked : value,
       };
+      if (name === "department_id" && current.category_id &&
+          !catalog.categories.find((item) => String(item.id) === String(current.category_id))?.departmentIds?.map(String).includes(String(value))) {
+        next.category_id = "";
+      }
 
       if (name === "submission_type" && value === "anonymous") {
         next.contact_pref = "";
@@ -1213,7 +1221,7 @@ function SubmitComplaint() {
                                 <span>Complaint category <Required /></span>
                                 <select aria-invalid={Boolean(fieldErrors.category_id)} name="category_id" onChange={updateField} value={form.category_id}>
                                   <option value="">Select a category</option>
-                                  {catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                  {availableCategories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                                 </select>
                                 {fieldError("category_id")}
                               </label>

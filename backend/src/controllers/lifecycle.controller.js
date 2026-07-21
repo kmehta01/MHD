@@ -113,14 +113,17 @@ const changeStatus = async (req, res) => {
     const settings = await SettingsPolicy.getPolicy();
     const target = text(req.body.status, "Target status", { required: true, max: 80 });
     const comment = text(req.body.comment, "Status comment", { required: settings.workflow.requireCommentOnStatusChange });
-    const normalized = target.toLowerCase();
-    if (settings.workflow.adminReviewRequired && complaint.status === "New" && normalized === "under review" &&
+    const workflow = await ConfigurationModel.listWorkflow();
+    const targetStatus = workflow.statuses.find((item) => item.is_active && (item.status_key === target || item.name === target || String(item.id) === target));
+    if (!targetStatus) throw error("Target status is unavailable");
+    const normalized = targetStatus.status_key;
+    if (settings.workflow.adminReviewRequired && complaint.status_key === "new" && normalized === "under_review" &&
         !hasPermission(req.user, "grievances.review_new")) {
       throw error("Administrator review is required before this grievance can move forward", 403);
     }
     if (normalized === "closed" && !hasPermission(req.user, "grievances.close")) throw error("You do not have permission to close grievances", 403);
     if (normalized === "closed" && settings.workflow.adminApprovalBeforeClosure && !["super-admin", "admin"].includes(req.user.role_slug)) throw error("Administrator approval is required before closure", 403);
-    if (complaint.status === "Closed") {
+    if (complaint.status_key === "closed") {
       if (!settings.workflow.allowReopening) throw error("Reopening is disabled by General Settings", 403);
       const allowedRoles = settings.workflow.reopenPermission === "Super Admin Only" ? ["super-admin"] : ["super-admin", "admin"];
       if (!allowedRoles.includes(req.user.role_slug)) throw error("You do not have permission to reopen grievances", 403);
@@ -140,9 +143,7 @@ const changeStatus = async (req, res) => {
       : null;
     const result = await LifecycleModel.transition({ complaintId, toStatusRef: target, comment, actorId: req.user.id, resolutionSummary, attachments });
     await audit(req, "GRIEVANCE_STATUS_CHANGED", complaintId);
-    const eventType = result.toStatus.status_key === "resolved" ? "resolution"
-      : result.toStatus.status_key === "returned" ? "returned"
-        : result.toStatus.status_key === "closed" ? "closure" : "status_change";
+    const eventType = result.toStatus.notification_event;
     await notify(eventType, complaintId, { status: result.toStatus.name });
     return res.json({ status: true, message: `Grievance moved to ${result.toStatus.name}`, data: result });
   } catch (caught) {

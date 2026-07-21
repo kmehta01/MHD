@@ -61,7 +61,7 @@ const generalSettingDefinitions = [
   define("assignment", "allowDirectDepartmentReassignment", false, "boolean"),
   define("assignment", "departmentOfficerSelectionRequired", false, "boolean"),
   define("assignment", "internalAssignmentNoteRequired", false, "boolean"),
-  define("assignment", "defaultAssignmentPriority", "Medium", "string", { options: ["Low", "Medium", "High", "Critical"] }),
+  define("assignment", "defaultAssignmentPriority", "medium", "string", { dynamicOptions: "priorities" }),
   define("assignment", "notifyDepartmentOnAssignment", true, "boolean"),
 
   define("dueDate", "dueDateRequired", true, "boolean"),
@@ -75,7 +75,7 @@ const generalSettingDefinitions = [
   define("dueDate", "enableEscalation", true, "boolean"),
   define("dueDate", "escalateAfterDays", 2, "number", { integer: true, min: 1, max: 365 }),
 
-  define("workflow", "defaultNewGrievanceStatus", "New", "string", { options: ["New", "Under Review", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned"] }),
+  define("workflow", "defaultNewGrievanceStatus", "new", "string", { dynamicOptions: "statuses" }),
   define("workflow", "adminReviewRequired", true, "boolean"),
   define("workflow", "departmentAcceptanceRequired", true, "boolean"),
   define("workflow", "adminApprovalBeforeClosure", true, "boolean"),

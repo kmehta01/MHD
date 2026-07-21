@@ -441,9 +441,7 @@ const run = async () => {
         `INSERT INTO departments (name, slug, is_active)
          VALUES (?, ?, 1)
          ON DUPLICATE KEY UPDATE
-           name = VALUES(name),
-           slug = VALUES(slug),
-           is_active = 1`,
+           slug = slug`,
         [name, slug],
       );
     }

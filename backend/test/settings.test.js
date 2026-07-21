@@ -12,6 +12,9 @@ const {
 const SettingsService = require("../src/services/settings.service");
 const SettingsPolicy = require("../src/services/settings-policy.service");
 const { generalSettingDefinitions, generalSettingsDefaults } = require("../src/utils/default-general-settings");
+const db = require("../src/config/db");
+
+test.after(async () => db.end());
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 

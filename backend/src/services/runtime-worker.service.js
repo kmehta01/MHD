@@ -50,12 +50,11 @@ const processDueDates = async (settings, {
   query = (...args) => db.query(...args),
 } = {}) => {
   if (!settings.dueDate.dueDateRequired || !await acquire("due-date-policy")) return;
-  const finalStatuses = "('Closed','Rejected','Duplicate')";
   if (settings.notifications.notifyDueDateReminder) {
     const [dueSoon] = await query(
-      `SELECT id, due_at FROM complaints
+      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
        WHERE due_at>=NOW() AND due_at<=DATE_ADD(NOW(), INTERVAL ? DAY)
-         AND status NOT IN ${finalStatuses} LIMIT 500`,
+         AND s.reporting_group='open' LIMIT 500`,
       [settings.dueDate.dueDateReminderDays],
     );
     for (const complaint of dueSoon) {
@@ -67,7 +66,7 @@ const processDueDates = async (settings, {
   }
   if (settings.dueDate.automaticallyMarkOverdue) {
     const [overdue] = await query(
-      `SELECT id, due_at FROM complaints WHERE due_at<NOW() AND status NOT IN ${finalStatuses} LIMIT 500`,
+      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.due_at<NOW() AND s.reporting_group='open' LIMIT 500`,
     );
     for (const complaint of overdue) {
       await query(`UPDATE complaints SET overdue_at=COALESCE(overdue_at, NOW()) WHERE id=?`, [complaint.id]);
@@ -79,8 +78,8 @@ const processDueDates = async (settings, {
   }
   if (settings.dueDate.enableEscalation) {
     const [overdue] = await query(
-      `SELECT id, due_at FROM complaints
-       WHERE due_at<DATE_SUB(NOW(), INTERVAL ? DAY) AND status NOT IN ${finalStatuses} LIMIT 500`,
+      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
+       WHERE c.due_at<DATE_SUB(NOW(), INTERVAL ? DAY) AND s.reporting_group='open' LIMIT 500`,
       [settings.dueDate.escalateAfterDays],
     );
     for (const complaint of overdue) {
@@ -103,13 +102,14 @@ const processDueDates = async (settings, {
 const processAutoClose = async (settings) => {
   if (!settings.workflow.autoCloseResolvedGrievances || !await acquireLease("workflow-auto-close")) return;
   const [rows] = await db.query(
-    `SELECT id FROM complaints WHERE status='Resolved' AND resolved_at<=DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 200`,
+    `SELECT c.id FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
+     WHERE s.reporting_group='resolved' AND c.resolved_at<=DATE_SUB(NOW(), INTERVAL ? DAY) LIMIT 200`,
     [settings.workflow.autoCloseAfterDays],
   );
   for (const complaint of rows) {
     try {
       await LifecycleModel.transition({
-        complaintId: complaint.id, toStatusRef: "Closed",
+        complaintId: complaint.id, toStatusRef: "closed",
         comment: "Automatically closed according to General Settings policy", actorId: null,
       });
       await NotificationService.enqueueComplaintEvent({

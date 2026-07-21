@@ -200,12 +200,12 @@ const buildFilters = (
   }
 
   if (status) {
-    conditions.push("c.status = ?");
+    conditions.push("c.status_id = ?");
     values.push(status);
   }
 
   if (priority) {
-    conditions.push("c.ticket_priority = ?");
+    conditions.push("c.priority_id = ?");
     values.push(priority);
   }
 
@@ -217,12 +217,12 @@ const buildFilters = (
 
   if (deadline === "overdue") {
     conditions.push(
-      "c.due_at < ? AND c.status NOT IN ('Resolved', 'Closed', 'Rejected', 'Duplicate')",
+      "c.due_at < ? AND s.reporting_group = 'open'",
     );
     values.push(todayStart);
   } else if (deadline === "due_today") {
     conditions.push(
-      "c.due_at >= ? AND c.due_at < ? AND c.status NOT IN ('Resolved', 'Closed', 'Rejected', 'Duplicate')",
+      "c.due_at >= ? AND c.due_at < ? AND s.reporting_group = 'open'",
     );
     values.push(todayStart, tomorrowStart);
   }
@@ -244,14 +244,16 @@ const findAll = async (filters, pagination) => {
 
   const [rows] = await db.query(
     `SELECT
-      c.id, c.token_number, c.assigned_department_id, c.ticket_priority,
-      c.status, c.submission_type, c.comp_name, c.comp_phone, c.comp_email,
+      c.id, c.token_number, c.assigned_department_id, p.name AS ticket_priority, p.priority_key,
+      s.name AS status, s.status_key, c.submission_type, c.comp_name, c.comp_phone, c.comp_email,
       c.issue_type, c.issue_other, c.incident_location,
       c.created_at, c.updated_at, d.name AS assigned_department_name,
       cc.name AS category_name
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
      LEFT JOIN complaint_categories cc ON cc.id=c.category_id
+     JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_priorities p ON p.id=c.priority_id
      ${clause}
      ORDER BY c.created_at DESC, c.id DESC
      LIMIT ? OFFSET ?`,
@@ -259,7 +261,7 @@ const findAll = async (filters, pagination) => {
   );
 
   const [counts] = await db.query(
-    `SELECT COUNT(*) AS total FROM complaints c ${clause}`,
+    `SELECT COUNT(*) AS total FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id ${clause}`,
     values,
   );
 
@@ -290,9 +292,10 @@ const findNotifications = async ({
     `SELECT
       c.id, c.token_number, c.assigned_department_id, c.issue_type,
       c.issue_other, c.submission_type, c.comp_name, c.incident_location,
-      c.status, c.created_at, d.name AS assigned_department_name
+      s.name AS status, s.status_key, c.created_at, d.name AS assigned_department_name
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
+     JOIN complaint_statuses s ON s.id=c.status_id
      ${clause}
      ORDER BY c.created_at DESC, c.id DESC
      LIMIT ?`,
@@ -334,8 +337,8 @@ const findById = async (
     : "WHERE c.id = ?";
   const [complaints] = await db.query(
     `SELECT
-      c.id, c.token_number, c.assigned_department_id, c.ticket_priority,
-      c.incident_date, c.status, c.assistance, c.assistance_other,
+      c.id, c.token_number, c.assigned_department_id, p.name AS ticket_priority, p.priority_key,
+      c.incident_date, s.name AS status, s.status_key, s.reporting_group, c.assistance, c.assistance_other,
       c.submission_type, c.comp_name, c.comp_phone, c.comp_phone_digits,
       c.comp_address, c.comp_email, c.contact_pref, c.on_behalf,
       c.identification_number_encrypted, c.identification_number_last4,
@@ -357,6 +360,8 @@ const findById = async (
      LEFT JOIN admin_users au ON au.id=c.assigned_officer_id
      LEFT JOIN complaint_categories cc ON cc.id=c.category_id
      LEFT JOIN complaint_locations cl ON cl.id=c.location_id
+     JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_priorities p ON p.id=c.priority_id
      ${idClause}
      LIMIT 1`,
     [...values, id],
@@ -381,7 +386,7 @@ const findById = async (
 const findByToken = async (tokenNumber) => {
   const [complaints] = await db.query(
     `SELECT
-      c.id, c.token_number, c.ticket_priority, c.status, c.submission_type,
+      c.id, c.token_number, p.name AS ticket_priority, p.priority_key, s.name AS status, s.status_key, c.submission_type,
       c.comp_name, c.comp_phone_digits, c.comp_address, c.comp_email,
       c.identification_number_hash, c.identification_number_last4,
       c.issue_type, c.issue_other, c.incident_location, c.assigned_department_id,
@@ -390,6 +395,8 @@ const findByToken = async (tokenNumber) => {
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
      LEFT JOIN complaint_categories cc ON cc.id=c.category_id
+     JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_priorities p ON p.id=c.priority_id
      WHERE c.token_number = ?
      LIMIT 1`,
     [tokenNumber],

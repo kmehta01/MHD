@@ -1,6 +1,6 @@
-const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
+const { readCompatibleMigration } = require("../src/utils/migration-sql");
 require("dotenv").config();
 
 const migrationPath = path.resolve(
@@ -18,7 +18,7 @@ const applyMigration = async () => {
   });
 
   try {
-    const sql = fs.readFileSync(migrationPath, "utf8");
+    const sql = await readCompatibleMigration(connection, migrationPath);
     await connection.query(sql);
     console.log("Two-factor authentication migration applied successfully.");
   } finally {

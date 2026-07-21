@@ -94,8 +94,10 @@ const normalizeComplaintSummary = (complaint, privacy = {}, revealPii = false) =
   issueOther: complaint.issue_other,
   incidentLocation: complaint.incident_location,
   ticketPriority: complaint.ticket_priority,
+  priorityKey: complaint.priority_key,
   district: complaint.incident_location,
   status: complaint.status,
+  statusKey: complaint.status_key,
   submittedAt: toIso(complaint.created_at),
   updatedAt: toIso(complaint.updated_at),
 });
@@ -160,13 +162,15 @@ const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [
   });
   const deadline = getOptionalString(query, "deadline", { maxLength: 20 });
 
-  if (status && !workflow.statuses.some((item) => item.name === status && item.is_active)) {
+  const statusRecord = status ? workflow.statuses.find((item) => item.is_active && (item.status_key === status || item.name === status)) : null;
+  if (status && !statusRecord) {
     const error = new Error("Invalid status filter");
     error.statusCode = 400;
     throw error;
   }
 
-  if (priority && !workflow.priorities.some((item) => item.name === priority && item.is_active)) {
+  const priorityRecord = priority ? workflow.priorities.find((item) => item.is_active && (item.priority_key === priority || item.name === priority)) : null;
+  if (priority && !priorityRecord) {
     const error = new Error("Invalid priority filter");
     error.statusCode = 400;
     throw error;
@@ -191,8 +195,8 @@ const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [
     assignment,
     deadline,
     search,
-    status,
-    priority,
+    status: statusRecord?.id || null,
+    priority: priorityRecord?.id || null,
     todayStart,
     tomorrowStart: new Date(todayStart.getTime() + 24 * 60 * 60 * 1000),
   };

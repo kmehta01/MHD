@@ -75,8 +75,8 @@ const Reports = () => {
           <div className="panel-header compact"><div><h2>Create report</h2><p>Exports are limited to {options.maximumRecords.toLocaleString()} records.</p></div></div>
           <div className="report-filter-grid">
             <label><span>Format</span><select name="format" onChange={update} required value={form.format}>{options.formats.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label><span>Status</span><select name="status" onChange={update} value={form.status}><option value="">All statuses</option>{options.statuses.map((item) => <option key={item.id}>{item.name}</option>)}</select></label>
-            <label><span>Priority</span><select name="priority" onChange={update} value={form.priority}><option value="">All priorities</option>{options.priorities.map((item) => <option key={item.id}>{item.name}</option>)}</select></label>
+            <label><span>Status</span><select name="status" onChange={update} value={form.status}><option value="">All statuses</option>{options.statuses.map((item) => <option key={item.id} value={item.status_key}>{item.name}</option>)}</select></label>
+            <label><span>Priority</span><select name="priority" onChange={update} value={form.priority}><option value="">All priorities</option>{options.priorities.map((item) => <option key={item.id} value={item.priority_key}>{item.name}</option>)}</select></label>
             <label><span>Department</span><select name="departmentId" onChange={update} value={form.departmentId}><option value="">All permitted departments</option>{options.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
             <label><span>From date</span><input name="dateFrom" onChange={update} type="date" value={form.dateFrom} /></label>
             <label><span>To date</span><input min={form.dateFrom || undefined} name="dateTo" onChange={update} type="date" value={form.dateTo} /></label>

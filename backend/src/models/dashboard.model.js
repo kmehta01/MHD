@@ -1,14 +1,5 @@
 const db = require("../config/db");
 
-const OPEN_STATUSES = [
-  "New",
-  "Under Review",
-  "In Progress",
-  "Pending Information",
-];
-const RESOLVED_STATUSES = ["Resolved", "Closed"];
-const FINAL_STATUSES = ["Resolved", "Closed", "Rejected", "Duplicate"];
-
 const getScopeFilter = (scope, alias = "c", periodStart = null) => {
   const periodClause = periodStart ? `${alias}.created_at >= ?` : null;
   const withPeriod = (clause, values) => ({
@@ -50,41 +41,41 @@ const getDashboardData = async ({
     db.query(
       `SELECT
          COUNT(*) AS total,
-         SUM(c.status = 'New') AS new_count,
-         SUM(c.status = 'Under Review') AS under_review,
+         SUM(s.status_key = 'new') AS new_count,
+         SUM(s.status_key = 'under_review') AS under_review,
          SUM(c.assigned_department_id IS NULL) AS unassigned,
          SUM(c.assigned_department_id IS NOT NULL) AS assigned,
-         SUM(c.status = 'In Progress') AS in_progress,
-         SUM(c.status = 'Pending Information') AS pending_information,
-         SUM(c.status = 'Resolved') AS resolved,
-         SUM(c.status = 'Closed') AS closed,
+         SUM(s.status_key = 'in_progress') AS in_progress,
+         SUM(s.status_key = 'pending_information') AS pending_information,
+         SUM(s.reporting_group = 'resolved') AS resolved,
+         SUM(s.reporting_group = 'closed') AS closed,
          SUM(
            c.due_at < ?
-           AND c.status NOT IN (?)
+           AND s.reporting_group = 'open'
          ) AS overdue,
-         SUM(c.ticket_priority IN ('Critical', 'High')) AS high_priority_count,
+         SUM(p.is_high_priority = 1) AS high_priority_count,
          SUM(
            c.due_at >= ?
            AND c.due_at < ?
-           AND c.status NOT IN (?)
+           AND s.reporting_group = 'open'
          ) AS due_today
        FROM complaints c
+       JOIN complaint_statuses s ON s.id=c.status_id
+       JOIN complaint_priorities p ON p.id=c.priority_id
        WHERE ${clause}`,
       [
         todayStart,
-        FINAL_STATUSES,
         todayStart,
         tomorrowStart,
-        FINAL_STATUSES,
         ...values,
       ],
     ),
     db.query(
-      `SELECT c.status AS label, COUNT(*) AS value
-       FROM complaints c
+      `SELECT s.status_key AS master_key, s.name AS label, COUNT(*) AS value
+       FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
        WHERE ${clause}
-       GROUP BY c.status
-       ORDER BY c.status`,
+       GROUP BY s.id, s.status_key, s.name, s.sort_order
+       ORDER BY s.sort_order, s.id`,
       values,
     ),
     db.query(
@@ -110,20 +101,20 @@ const getDashboardData = async ({
       [...values, trendStart],
     ),
     db.query(
-      `SELECT c.ticket_priority AS label, COUNT(*) AS value
-       FROM complaints c
+      `SELECT p.priority_key AS master_key, p.name AS label, COUNT(*) AS value
+       FROM complaints c JOIN complaint_priorities p ON p.id=c.priority_id
        WHERE ${clause}
-       GROUP BY c.ticket_priority
-       ORDER BY FIELD(c.ticket_priority, 'Critical', 'High', 'Medium', 'Low')`,
+       GROUP BY p.id, p.priority_key, p.name, p.sort_order
+       ORDER BY p.sort_order, p.id`,
       values,
     ),
     db.query(
       `SELECT
-         SUM(c.status IN (?)) AS open_count,
-         SUM(c.status IN (?)) AS resolved_count
-       FROM complaints c
+         SUM(s.reporting_group = 'open') AS open_count,
+         SUM(s.reporting_group IN ('resolved','closed')) AS resolved_count
+       FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
        WHERE ${clause}`,
-      [OPEN_STATUSES, RESOLVED_STATUSES, ...values],
+      values,
     ),
     db.query(
       `SELECT
@@ -132,11 +123,11 @@ const getDashboardData = async ({
            1
          ) AS average_days,
          COUNT(*) AS resolved_samples
-       FROM complaints c
+       FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
        WHERE ${clause}
-         AND c.status IN (?)
+         AND s.reporting_group IN ('resolved','closed')
          AND c.resolved_at IS NOT NULL`,
-      [...values, RESOLVED_STATUSES],
+      values,
     ),
     db.query(
       `SELECT
@@ -148,12 +139,13 @@ const getDashboardData = async ({
          COUNT(*) AS sample_size
        FROM complaints c
        LEFT JOIN departments d ON d.id = c.assigned_department_id
+       JOIN complaint_statuses s ON s.id=c.status_id
        WHERE ${clause}
-         AND c.status IN (?)
+         AND s.reporting_group IN ('resolved','closed')
          AND c.resolved_at IS NOT NULL
        GROUP BY c.assigned_department_id, d.name
        ORDER BY value DESC, label ASC`,
-      [...values, RESOLVED_STATUSES],
+      values,
     ),
     db.query(
       `SELECT
@@ -161,19 +153,22 @@ const getDashboardData = async ({
          COUNT(*) AS value
        FROM complaints c
        LEFT JOIN departments d ON d.id = c.assigned_department_id
+       JOIN complaint_statuses s ON s.id=c.status_id
        WHERE ${clause}
          AND c.due_at < ?
-         AND c.status NOT IN (?)
+         AND s.reporting_group = 'open'
        GROUP BY c.assigned_department_id, d.name
        ORDER BY value DESC, label ASC`,
-      [...values, todayStart, FINAL_STATUSES],
+      [...values, todayStart],
     ),
     db.query(
-      `SELECT c.id, c.token_number, c.status, c.ticket_priority,
+      `SELECT c.id, c.token_number, s.status_key, s.name AS status, p.priority_key, p.name AS ticket_priority,
               c.updated_at, c.created_at,
               COALESCE(d.name, 'Unassigned') AS department_name
        FROM complaints c
        LEFT JOIN departments d ON d.id = c.assigned_department_id
+       JOIN complaint_statuses s ON s.id=c.status_id
+       JOIN complaint_priorities p ON p.id=c.priority_id
        WHERE ${clause}
        ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
        LIMIT 10`,
@@ -196,9 +191,6 @@ const getDashboardData = async ({
 };
 
 module.exports = {
-  FINAL_STATUSES,
-  OPEN_STATUSES,
-  RESOLVED_STATUSES,
   getDashboardData,
   getScopeFilter,
 };

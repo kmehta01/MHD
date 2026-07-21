@@ -179,31 +179,27 @@ CREATE TABLE IF NOT EXISTS complaint_resolution_documents (
   CONSTRAINT fk_resolution_document_actor FOREIGN KEY (uploaded_by) REFERENCES admin_users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO complaint_statuses (status_key, name, is_final, sort_order) VALUES
+INSERT IGNORE INTO complaint_statuses (status_key, name, is_final, sort_order) VALUES
   ('new', 'New', 0, 10), ('under_review', 'Under Review', 0, 20),
   ('in_progress', 'In Progress', 0, 30), ('pending_information', 'Pending Information', 0, 40),
   ('resolved', 'Resolved', 0, 50), ('closed', 'Closed', 1, 60),
   ('rejected', 'Rejected', 1, 70), ('duplicate', 'Duplicate', 1, 80),
-  ('returned', 'Returned', 0, 45)
-ON DUPLICATE KEY UPDATE name=VALUES(name), is_final=VALUES(is_final), sort_order=VALUES(sort_order);
+  ('returned', 'Returned', 0, 45);
 
-INSERT INTO complaint_priorities (priority_key, name, sort_order) VALUES
-  ('low', 'Low', 10), ('medium', 'Medium', 20), ('high', 'High', 30), ('critical', 'Critical', 40)
-ON DUPLICATE KEY UPDATE name=VALUES(name), sort_order=VALUES(sort_order);
+INSERT IGNORE INTO complaint_priorities (priority_key, name, sort_order) VALUES
+  ('low', 'Low', 10), ('medium', 'Medium', 20), ('high', 'High', 30), ('critical', 'Critical', 40);
 
-INSERT INTO complaint_categories (code, name) VALUES
+INSERT IGNORE INTO complaint_categories (code, name) VALUES
   ('SOCIAL_WELFARE', 'Social welfare or assistance'), ('CHILD_PROTECTION', 'Child protection services'),
   ('FAMILY_SUPPORT', 'Family support services'), ('GBV_RESPONSE', 'Gender-based violence response'),
   ('ELDERLY_SUPPORT', 'Elderly support services'), ('DISABILITY_SERVICES', 'Disability services'),
   ('STAFF_CONDUCT', 'Staff conduct or behaviour'), ('CORRUPTION', 'Corruption or unethical behaviour'),
   ('SERVICE_DELAYS', 'Service delays'), ('DISCRIMINATION', 'Discrimination'),
-  ('POLICY', 'Policy implementation'), ('UNCATEGORIZED', 'Uncategorized')
-ON DUPLICATE KEY UPDATE name=VALUES(name);
+  ('POLICY', 'Policy implementation'), ('UNCATEGORIZED', 'Uncategorized');
 
-INSERT INTO complaint_locations (code, name) VALUES
+INSERT IGNORE INTO complaint_locations (code, name) VALUES
   ('BELIZE', 'Belize'), ('CAYO', 'Cayo'), ('COROZAL', 'Corozal'),
-  ('ORANGE_WALK', 'Orange Walk'), ('STANN_CREEK', 'Stann Creek'), ('TOLEDO', 'Toledo')
-ON DUPLICATE KEY UPDATE name=VALUES(name);
+  ('ORANGE_WALK', 'Orange Walk'), ('STANN_CREEK', 'Stann Creek'), ('TOLEDO', 'Toledo');
 
 INSERT IGNORE INTO workflow_transitions (from_status_id, to_status_id)
 SELECT f.id, t.id FROM complaint_statuses f JOIN complaint_statuses t

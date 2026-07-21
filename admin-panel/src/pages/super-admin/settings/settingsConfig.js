@@ -73,7 +73,7 @@ export const settingsSections = [
       { key: "allowDirectDepartmentReassignment", label: "Allow Direct Department Reassignment", type: "toggle" },
       { key: "departmentOfficerSelectionRequired", label: "Department Officer Selection Required", type: "toggle" },
       { key: "internalAssignmentNoteRequired", label: "Internal Assignment Note Required", type: "toggle" },
-      { key: "defaultAssignmentPriority", label: "Default Assignment Priority", type: "select", options: options(["Low", "Medium", "High", "Critical"]) },
+      { key: "defaultAssignmentPriority", label: "Default Assignment Priority", type: "select", dynamicOptions: "priorities" },
       { key: "notifyDepartmentOnAssignment", label: "Notify Department on Assignment", type: "toggle" },
     ],
   },
@@ -95,7 +95,7 @@ export const settingsSections = [
   {
     id: "workflow", title: "Workflow Settings", icon: "activity", description: "Control reviews, approvals, reopening, and automated closure.", preview: "workflow",
     fields: [
-      { key: "defaultNewGrievanceStatus", label: "Default New Grievance Status", type: "select", options: options(["New", "Under Review", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned"]) },
+      { key: "defaultNewGrievanceStatus", label: "Default New Grievance Status", type: "select", dynamicOptions: "statuses" },
       { key: "adminReviewRequired", label: "Admin Review Required", type: "toggle" },
       { key: "departmentAcceptanceRequired", label: "Department Acceptance Required", type: "toggle" },
       { key: "adminApprovalBeforeClosure", label: "Admin Approval Before Closure", type: "toggle" },

@@ -9,19 +9,6 @@ const SettingsPolicy = require("../services/settings-policy.service");
 const { generalSettingsDefaults } = require("../utils/default-general-settings");
 const { getZonedParts, zonedPartsToDate } = require("../services/due-date.service");
 
-const STATUSES = [
-  "New",
-  "Under Review",
-  "In Progress",
-  "Pending Information",
-  "Resolved",
-  "Closed",
-  "Rejected",
-  "Duplicate",
-  "Returned",
-];
-const PRIORITIES = ["Critical", "High", "Medium", "Low"];
-
 const DASHBOARD_CARD_SETTINGS = {
   total: "showTotalGrievances",
   new: "showNewGrievances",
@@ -78,6 +65,14 @@ const fillSeries = (labels, rows) => {
   }));
 };
 
+const fillMasterSeries = (masters, rows, keyName) => {
+  if (!masters.length) return rows.map((row) => ({ label: row.label, value: toCount(row.value) }));
+  const values = new Map(rows.map((row) => [row.master_key, toCount(row.value)]));
+  return masters.filter((item) => item.is_active).map((item) => ({
+    key: item[keyName], label: item.name, value: values.get(item[keyName]) || 0,
+  }));
+};
+
 const buildMonthlyTrend = (rows, timeZone = "America/Belize", now = new Date()) => {
   const values = new Map(
     rows.map((row) => [row.period, toCount(row.value)]),
@@ -112,7 +107,7 @@ const filterPermittedWidgets = (user, widgets, permissionMap) =>
 const filterEnabledWidgets = (widgets, settings, map) =>
   Object.fromEntries(Object.entries(widgets).filter(([key]) => map[key] ? settings[map[key]] : true));
 
-const buildDashboardPayload = ({ user, result, scope, settings = generalSettingsDefaults }) => {
+const buildDashboardPayload = ({ user, result, scope, workflow = { statuses: [], priorities: [] }, settings = generalSettingsDefaults }) => {
   const overview = result.overview;
   const overviewWidgets = {
     total: toCount(overview.total),
@@ -129,13 +124,13 @@ const buildDashboardPayload = ({ user, result, scope, settings = generalSettings
     due_today: toCount(overview.due_today),
   };
   const chartWidgets = {
-    by_status: fillSeries(STATUSES, result.status),
+    by_status: fillMasterSeries(workflow.statuses, result.status, "status_key"),
     by_department: result.departments.map((row) => ({
       label: row.label,
       value: toCount(row.value),
     })),
     monthly_trend: buildMonthlyTrend(result.trend, settings.portal.timeZone),
-    by_priority: fillSeries(PRIORITIES, result.priorities),
+    by_priority: fillMasterSeries(workflow.priorities, result.priorities, "priority_key"),
     open_vs_resolved: [
       {
         label: "Open",
@@ -167,6 +162,8 @@ const buildDashboardPayload = ({ user, result, scope, settings = generalSettings
       token_number: row.token_number,
       status: row.status,
       priority: row.ticket_priority,
+      status_key: row.status_key,
+      priority_key: row.priority_key,
       department: row.department_name,
       occurred_at: row.updated_at || row.created_at,
     })),
@@ -202,7 +199,9 @@ const buildDashboardPayload = ({ user, result, scope, settings = generalSettings
 
 const getDashboard = async (req, res) => {
   try {
-    const [scope, settings] = [getGrievanceScope(req.user), await SettingsPolicy.getPolicy()];
+    const ConfigurationModel = require("../models/configuration.model");
+    const [settings, workflow] = await Promise.all([SettingsPolicy.getPolicy(), ConfigurationModel.listWorkflow()]);
+    const scope = getGrievanceScope(req.user);
     const result = await DashboardModel.getDashboardData({
       scope,
       ...getDashboardAnchors(settings.portal.defaultDashboardPeriod, settings.portal.timeZone),
@@ -211,7 +210,7 @@ const getDashboard = async (req, res) => {
     return res.json({
       status: true,
       message: "Dashboard metrics fetched successfully",
-      data: buildDashboardPayload({ user: req.user, result, scope, settings }),
+      data: buildDashboardPayload({ user: req.user, result, scope, workflow, settings }),
     });
   } catch (error) {
     return res.status(500).json({
@@ -226,6 +225,7 @@ module.exports = {
   buildDashboardPayload,
   buildMonthlyTrend,
   fillSeries,
+  fillMasterSeries,
   getDashboard,
   getDashboardAnchors,
 };

@@ -6,6 +6,8 @@ import API from "../services/api";
 const emptyCatalog = { code: "", name: "", isActive: true };
 const emptyHoliday = { date: "", name: "", isActive: true };
 const emptyRule = { name: "", matchType: "category", matchValue: "", departmentId: "", officerId: "", priority: 100, isActive: true };
+const emptyStatus = { key: "", name: "", reportingGroup: "open", notificationEvent: "status_change", isFinal: false, isActive: true, sortOrder: 100 };
+const emptyPriority = { key: "", name: "", isHighPriority: false, isActive: true, sortOrder: 100 };
 
 const RuntimeConfiguration = () => {
   const { module, setting } = useParams();
@@ -15,6 +17,8 @@ const RuntimeConfiguration = () => {
   const [catalogForm, setCatalogForm] = useState(emptyCatalog);
   const [holidayForm, setHolidayForm] = useState(emptyHoliday);
   const [ruleForm, setRuleForm] = useState(emptyRule);
+  const [statusForm, setStatusForm] = useState(emptyStatus);
+  const [priorityForm, setPriorityForm] = useState(emptyPriority);
   const [preview, setPreview] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -41,7 +45,7 @@ const RuntimeConfiguration = () => {
     finally { setBusy(false); }
   };
 
-  const catalogName = mode === "complaint-categories" ? "categories" : "locations";
+  const catalogName = mode === "complaint-categories" ? "categories" : mode === "departments" ? "departments" : "locations";
   const catalogRows = data?.[catalogName] || [];
   const saveCatalog = (event) => {
     event.preventDefault();
@@ -69,10 +73,18 @@ const RuntimeConfiguration = () => {
     }),
     "Notification template saved.",
   );
+  const saveWorkflowItem = (type, form, reset) => {
+    const endpoint = `/configuration/${type}${form.id ? `/${form.id}` : ""}`;
+    execute(() => form.id ? API.put(endpoint, form) : API.post(endpoint, form), "Workflow master data saved.");
+    reset();
+  };
+  const saveMapping = (categoryId, departmentIds) => execute(
+    () => API.put(`/configuration/categories/${categoryId}/departments`, { departmentIds }), "Category mapping saved.",
+  );
 
   if (!data) return <div className="panel module-loading">Loading runtime configuration…</div>;
 
-  const catalogMode = ["complaint-categories", "locations"].includes(mode);
+  const catalogMode = ["complaint-categories", "locations", "departments"].includes(mode);
   const ruleMatchOptions = ruleForm.matchType === "category" ? data.categories
     : ruleForm.matchType === "location" ? data.locations
       : ruleForm.matchType === "department" ? data.routingRules.map(() => null).filter(Boolean).concat([]) : [];
@@ -88,12 +100,14 @@ const RuntimeConfiguration = () => {
         <form className="panel runtime-config-form" onSubmit={saveCatalog}>
           <input maxLength="40" onChange={(event) => setCatalogForm((current) => ({ ...current, code: event.target.value }))} placeholder="Code" required value={catalogForm.code} />
           <input maxLength="160" onChange={(event) => setCatalogForm((current) => ({ ...current, name: event.target.value }))} placeholder="Display name" required value={catalogForm.name} />
+          <label><input checked={catalogForm.isActive} onChange={(event) => setCatalogForm((current) => ({ ...current, isActive: event.target.checked }))} type="checkbox" /> Active</label>
           <button className="button button-primary" disabled={busy} type="submit">Save</button>
         </form>
         <section className="panel runtime-config-list"><h2>Configured items</h2>{catalogRows.map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.name}</strong><small>{item.code} · {item.is_active ? "Active" : "Inactive"}</small></span><div><button onClick={() => setCatalogForm({ id: item.id, code: item.code, name: item.name, isActive: Boolean(item.is_active) })} type="button">Edit</button>{item.is_active ? <button onClick={() => execute(() => API.delete(`/configuration/catalogs/${catalogName}/${item.id}`), "Catalog item deactivated.")} type="button">Deactivate</button> : null}</div></div>)}</section>
       </> : null}
 
       {mode === "assignment-rules" || mode === "department-mapping" ? <>
+        {mode === "department-mapping" ? <section className="panel runtime-config-list"><h2>Department-category mappings</h2>{data.categories.map((category) => { const current = data.categoryMappings.find((item) => item.categoryId === category.id)?.departmentIds || []; return <div className="notification-template-editor" key={category.id}><strong>{category.name}</strong>{data.departments.filter((item) => item.is_active).map((department) => <label key={department.id}><input checked={current.map(String).includes(String(department.id))} onChange={(event) => saveMapping(category.id, event.target.checked ? [...current, department.id] : current.filter((id) => String(id) !== String(department.id)))} type="checkbox" /> {department.name}</label>)}</div>; })}</section> : null}
         <form className="panel runtime-config-form routing" onSubmit={saveRule}>
           <input onChange={(event) => setRuleForm((current) => ({ ...current, name: event.target.value }))} placeholder="Rule name" required value={ruleForm.name} />
           <select onChange={(event) => setRuleForm((current) => ({ ...current, matchType: event.target.value, matchValue: "" }))} value={ruleForm.matchType}><option value="category">Category</option><option value="department">Submitted department</option><option value="location">Location</option><option value="fallback">Fallback</option></select>
@@ -114,7 +128,31 @@ const RuntimeConfiguration = () => {
 
       {mode === "notification-templates" ? <section className="panel runtime-config-list"><h2>Notification templates</h2>{templates.map((template, index) => <div className="notification-template-editor" key={template.id}><input onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} value={template.name} /><input disabled={template.channel !== "email"} onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subject_template: event.target.value } : item))} placeholder="Email subject" value={template.subject_template || ""} /><textarea onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, body_template: event.target.value } : item))} value={template.body_template} /><button className="button button-secondary" disabled={busy} onClick={() => saveTemplate(template)} type="button"><Icon name="check" size={15} /> Save</button></div>)}</section> : null}
 
-      {mode === "status" || mode === "priority" ? <section className="panel runtime-config-list"><h2>{mode === "status" ? "Workflow statuses" : "Priorities"}</h2><p>These records are data-driven and used by filters, transitions, dashboards, and exports.</p>{(mode === "status" ? data.workflow.statuses : data.workflow.priorities).map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.name}</strong><small>{item.status_key || item.priority_key} · order {item.sort_order} · {item.is_active ? "Active" : "Inactive"}</small></span></div>)}</section> : null}
+      {mode === "status" ? <>
+        <form className="panel runtime-config-form" onSubmit={(event) => { event.preventDefault(); saveWorkflowItem("statuses", statusForm, () => setStatusForm(emptyStatus)); }}>
+          <input disabled={Boolean(statusForm.id)} onChange={(event) => setStatusForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable key" required value={statusForm.key} />
+          <input onChange={(event) => setStatusForm((item) => ({ ...item, name: event.target.value }))} placeholder="Display name" required value={statusForm.name} />
+          <select onChange={(event) => setStatusForm((item) => ({ ...item, reportingGroup: event.target.value }))} value={statusForm.reportingGroup}>{["open", "resolved", "closed", "rejected", "duplicate", "other"].map((value) => <option key={value}>{value}</option>)}</select>
+          <select onChange={(event) => setStatusForm((item) => ({ ...item, notificationEvent: event.target.value }))} value={statusForm.notificationEvent}>{["status_change", "resolution", "closure", "returned"].map((value) => <option key={value}>{value}</option>)}</select>
+          <input min="0" onChange={(event) => setStatusForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={statusForm.sortOrder} />
+          <label><input checked={statusForm.isFinal} onChange={(event) => setStatusForm((item) => ({ ...item, isFinal: event.target.checked }))} type="checkbox" /> Final state</label>
+          <label><input checked={statusForm.isActive} onChange={(event) => setStatusForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save status</button>
+        </form>
+        <section className="panel runtime-config-list"><h2>Workflow statuses</h2>{data.workflow.statuses.map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.name}</strong><small>{item.status_key} · {item.reporting_group} · order {item.sort_order} · {item.is_active ? "Active" : "Inactive"}</small></span><button onClick={() => setStatusForm({ id: item.id, key: item.status_key, name: item.name, reportingGroup: item.reporting_group, notificationEvent: item.notification_event, isFinal: Boolean(item.is_final), isActive: Boolean(item.is_active), sortOrder: item.sort_order })} type="button">Edit</button></div>)}</section>
+        <section className="panel runtime-config-list"><h2>Transitions</h2>{data.workflow.transitions.map((item) => <div className="runtime-config-row" key={item.id}><span>{item.from_status} → {item.to_status}</span><button onClick={() => execute(() => API.put("/configuration/transitions", { fromStatusId: item.from_status_id, toStatusId: item.to_status_id, isActive: !item.is_active }), "Transition updated.")} type="button">{item.is_active ? "Disable" : "Enable"}</button></div>)}</section>
+      </> : null}
+      {mode === "priority" ? <>
+        <form className="panel runtime-config-form" onSubmit={(event) => { event.preventDefault(); saveWorkflowItem("priorities", priorityForm, () => setPriorityForm(emptyPriority)); }}>
+          <input disabled={Boolean(priorityForm.id)} onChange={(event) => setPriorityForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable key" required value={priorityForm.key} />
+          <input onChange={(event) => setPriorityForm((item) => ({ ...item, name: event.target.value }))} placeholder="Display name" required value={priorityForm.name} />
+          <input min="0" onChange={(event) => setPriorityForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={priorityForm.sortOrder} />
+          <label><input checked={priorityForm.isHighPriority} onChange={(event) => setPriorityForm((item) => ({ ...item, isHighPriority: event.target.checked }))} type="checkbox" /> High priority</label>
+          <label><input checked={priorityForm.isActive} onChange={(event) => setPriorityForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save priority</button>
+        </form>
+        <section className="panel runtime-config-list"><h2>Priorities</h2>{data.workflow.priorities.map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.name}</strong><small>{item.priority_key} · order {item.sort_order} · {item.is_high_priority ? "High priority" : "Standard"} · {item.is_active ? "Active" : "Inactive"}</small></span><button onClick={() => setPriorityForm({ id: item.id, key: item.priority_key, name: item.name, isHighPriority: Boolean(item.is_high_priority), isActive: Boolean(item.is_active), sortOrder: item.sort_order })} type="button">Edit</button></div>)}</section>
+      </> : null}
     </div>
   );
 };
