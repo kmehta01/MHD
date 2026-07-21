@@ -30,39 +30,9 @@ const legacyIssueLabel = (value) => String(value || "")
   .replaceAll("_", " ")
   .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
-const ALLOWED_ASSISTANCE = new Set([
-  "Spanish",
-  "Maya",
-  "Garifuna",
-  "Assisted completion",
-  "Large print",
-]);
 const ALLOWED_SUBMISSION_TYPES = new Set(["named", "anonymous"]);
-const ALLOWED_CONTACT_PREFERENCES = new Set([
-  "phone",
-  "email",
-  "mail",
-  "in_person",
-  "whatsapp",
-]);
 const ALLOWED_YES_NO = new Set(["yes", "no"]);
 const ALLOWED_PERMISSION = new Set(["yes", "no", "not_applicable"]);
-const ALLOWED_CHANNELS = new Set([
-  "in_person",
-  "telephone",
-  "email",
-  "online_form",
-  "mail",
-  "whatsapp",
-  "social_media",
-  "suggestion_box",
-]);
-const ALLOWED_ACCOMMODATIONS = new Set([
-  "sign_language",
-  "wheelchair",
-  "home_visit",
-  "translation",
-]);
 
 const getIpAddress = (req) =>
   String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "") ||
@@ -220,7 +190,11 @@ const validateAllowedValues = (values, allowed, label) => {
   }
 };
 
-const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
+const validateGrievanceBody = (body, settings = generalSettingsDefaults, formOptions = null) => {
+  if (!formOptions) throw Object.assign(new Error("Grievance form configuration is unavailable"), { statusCode: 503 });
+  if (!formOptions.submissionChannels?.length || !formOptions.contactPreferences?.length) {
+    throw Object.assign(new Error("Required grievance form choices are unavailable"), { statusCode: 503 });
+  }
   const submissionPolicy = settings.grievanceSubmission;
   const privacyPolicy = settings.privacy;
   const assistance = getStringArray(body.assistance);
@@ -236,7 +210,7 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
   const affectedName = getString(body.affected_name);
   const relationship = getString(body.relationship);
   const permission = getString(body.permission);
-  const issueTypes = getStringArray(body.issue_type);
+  const issueTypes = [];
   const issueOther = getString(body.issue_other);
   const channels = getStringArray(body.channel);
   const incidentDate = getString(body.incident_date);
@@ -255,17 +229,22 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
   const signature = getString(body.signature);
   const declarationDate = getString(body.declaration_date);
 
-  validateAllowedValues(assistance, ALLOWED_ASSISTANCE, "assistance option");
+  if (Array.isArray(body.contact_pref)) {
+    throw buildClientError("Preferred contact method must contain exactly one value");
+  }
+
+  const assistanceKeys = new Set(formOptions.assistance.map((option) => option.key));
+  const channelKeys = new Set(formOptions.submissionChannels.map((option) => option.key));
+  const accommodationKeys = new Set(formOptions.accommodations.map((option) => option.key));
+  const contactOptions = new Map(formOptions.contactPreferences.map((option) => [option.key, option]));
+  validateAllowedValues(assistance, assistanceKeys, "assistance option");
   if (assistance.length > 1) {
     throw buildClientError("Only one language or assistance option may be selected");
   }
-  if (issueTypes.length > 10 || issueTypes.some((value) => value.length > 80 || !/^[a-z0-9_-]+$/i.test(value))) {
-    throw buildClientError("Invalid legacy issue type value");
-  }
-  validateAllowedValues(channels, ALLOWED_CHANNELS, "contact channel");
+  validateAllowedValues(channels, channelKeys, "contact channel");
   validateAllowedValues(
     accommodations,
-    ALLOWED_ACCOMMODATIONS,
+    accommodationKeys,
     "accommodation",
   );
 
@@ -281,7 +260,8 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
 
   if (!isAnonymous) {
     if (!compName) throw buildClientError("Full name is required");
-    if (!ALLOWED_CONTACT_PREFERENCES.has(contactPreference)) {
+    const contactOption = contactOptions.get(contactPreference);
+    if (!contactOption) {
       throw buildClientError("Preferred contact method is required");
     }
     if (!ALLOWED_YES_NO.has(onBehalf)) {
@@ -290,7 +270,7 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
       );
     }
     if (
-      ["phone", "whatsapp"].includes(contactPreference) &&
+      contactOption.contactRequirement === "phone" &&
       getPhoneDigits(compPhone).length < 7
     ) {
       throw buildClientError(
@@ -307,12 +287,12 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
         normalizeIdentificationNumber(identificationNumber).length < 4) {
       throw buildClientError("A valid identification number is required");
     }
-    if (contactPreference === "email" && !compEmail) {
+    if (contactOption.contactRequirement === "email" && !compEmail) {
       throw buildClientError(
         "Email address is required for the selected contact method",
       );
     }
-    if (contactPreference === "mail" && !compAddress) {
+    if (contactOption.contactRequirement === "address" && !compAddress) {
       throw buildClientError(
         "Address is required for the selected contact method",
       );
@@ -336,9 +316,9 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
     }
   }
 
-  if (!submissionPolicy.allowCitizenCategorySelection && !issueTypes.length && !issueOther) {
+  if (!submissionPolicy.allowCitizenCategorySelection && !issueOther) {
     throw buildClientError(
-      "Select at least one issue type or specify another issue",
+      "Enter a complaint subject",
     );
   }
   if (!channels.length) {
@@ -406,7 +386,7 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
     issueOther,
   ].filter(Boolean);
   const issueSummary =
-    issueLabels.length > 1 ? "Multiple grievance issues" : issueLabels[0];
+    issueLabels.length > 1 ? "Multiple grievance issues" : issueLabels[0] || "Grievance submission";
 
   const grievanceData = {
     assistance,
@@ -482,7 +462,10 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
 
 const submitComplaint = async (req, res) => {
   try {
-    const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
+    const [settings, formOptions] = await Promise.all([
+      req.generalSettings || SettingsPolicy.getPolicy(),
+      ConfigurationModel.listFormOptions({ activeOnly: true }),
+    ]);
     if (settings.grievanceSubmission.enableCaptcha) {
       const captchaToken = getString(req.body.captchaToken) || getString(req.body.captcha_token);
       if (!captchaToken) throw buildClientError("Complete the CAPTCHA verification");
@@ -497,7 +480,7 @@ const submitComplaint = async (req, res) => {
     }
     const complaint = await resolvePolicySelections(
       req.body,
-      validateGrievanceBody(req.body, settings),
+      validateGrievanceBody(req.body, settings, formOptions),
       settings,
     );
 
@@ -565,10 +548,13 @@ const submitComplaint = async (req, res) => {
 
 const submitAdminComplaint = async (req, res) => {
   try {
-    const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
+    const [settings, formOptions] = await Promise.all([
+      req.generalSettings || SettingsPolicy.getPolicy(),
+      ConfigurationModel.listFormOptions({ activeOnly: true }),
+    ]);
     const complaint = await resolvePolicySelections(
       req.body,
-      validateGrievanceBody(req.body, settings),
+      validateGrievanceBody(req.body, settings, formOptions),
       settings,
     );
     const receivedDate = getString(req.body.office_received_date);

@@ -5,7 +5,7 @@ const controller = require("../controllers/configuration.controller");
 
 const router = express.Router();
 router.use(verifyToken);
-router.get("/", checkAnyPermission(["configuration.catalogs.manage", "configuration.routing.manage", "configuration.workflow.manage", "configuration.departments.manage", "departments.view", "departments.manage", "departments.manage_limited"]), controller.getConfiguration);
+router.get("/", checkAnyPermission(["configuration.catalogs.manage", "configuration.routing.manage", "configuration.workflow.manage", "configuration.departments.manage", "configuration.form_options.manage", "departments.view", "departments.manage", "departments.manage_limited"]), controller.getConfiguration);
 router.post("/catalogs/:catalog", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.manage"]), controller.saveCatalogItem);
 router.put("/catalogs/:catalog/:id", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.manage"]), controller.saveCatalogItem);
 router.delete("/catalogs/:catalog/:id", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.manage"]), controller.deactivateCatalogItem);
@@ -16,6 +16,9 @@ router.post("/priorities", checkPermission("configuration.workflow.manage"), con
 router.put("/priorities/:id", checkPermission("configuration.workflow.manage"), controller.savePriority);
 router.delete("/workflow/:type/:id", checkPermission("configuration.workflow.manage"), controller.deactivateWorkflowItem);
 router.put("/transitions", checkPermission("configuration.workflow.manage"), controller.saveTransition);
+router.post("/form-options", checkPermission("configuration.form_options.manage"), controller.saveFormOption);
+router.put("/form-options/:id", checkPermission("configuration.form_options.manage"), controller.saveFormOption);
+router.delete("/form-options/:id", checkPermission("configuration.form_options.manage"), controller.deactivateFormOption);
 router.post("/routing-rules", checkPermission("configuration.routing.manage"), controller.saveRoutingRule);
 router.put("/routing-rules/:id", checkPermission("configuration.routing.manage"), controller.saveRoutingRule);
 router.delete("/routing-rules/:id", checkPermission("configuration.routing.manage"), controller.deactivateRoutingRule);

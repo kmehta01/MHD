@@ -11,6 +11,8 @@ const sourceRoots = [
 const excluded = new Set(["default-general-settings.js"]);
 const displayNamePredicates = /(?:status|ticket_priority)\s+(?:=|IN|NOT\s+IN)\s*(?:\(|)\s*['"](?:New|Under Review|In Progress|Pending Information|Resolved|Closed|Rejected|Duplicate|Returned|Low|Medium|High|Critical)['"]/i;
 const optionArray = /(?:STATUSES|PRIORITIES|DEPARTMENTS|DISTRICTS|CATEGORIES)\s*=\s*\[/;
+const grievanceFormArray = /(?:assistance|contact(?:Preference)?|submissionChannel|channel|accommodation)Options\s*=\s*\[/i;
+const grievanceAllowedSet = /ALLOWED_(?:ASSISTANCE|CONTACT_PREFERENCES?|CHANNELS?|ACCOMMODATIONS?)/;
 
 const walk = (directory) => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
   const target = path.join(directory, entry.name);
@@ -22,7 +24,8 @@ test("runtime source contains no master display-name predicates or option arrays
     .filter((file) => /\.jsx?$/.test(file) && !excluded.has(path.basename(file)))
     .filter((file) => {
       const source = fs.readFileSync(file, "utf8");
-      return displayNamePredicates.test(source) || optionArray.test(source);
+      return displayNamePredicates.test(source) || optionArray.test(source) ||
+        grievanceFormArray.test(source) || grievanceAllowedSet.test(source);
     })
     .map((file) => path.relative(path.resolve(__dirname, "../.."), file)));
   assert.deepEqual(violations, []);

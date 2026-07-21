@@ -8,6 +8,14 @@ const emptyHoliday = { date: "", name: "", isActive: true };
 const emptyRule = { name: "", matchType: "category", matchValue: "", departmentId: "", officerId: "", priority: 100, isActive: true };
 const emptyStatus = { key: "", name: "", reportingGroup: "open", notificationEvent: "status_change", isFinal: false, isActive: true, sortOrder: 100 };
 const emptyPriority = { key: "", name: "", isHighPriority: false, isActive: true, sortOrder: 100 };
+const emptyFormOption = { group: "assistance", key: "", label: "", helpText: "", contactRequirement: "none", sortOrder: 100, isActive: true };
+
+const formOptionGroups = [
+  { value: "assistance", label: "Assistance" },
+  { value: "submission_channel", label: "Submission channels" },
+  { value: "accommodation", label: "Accommodations" },
+  { value: "contact_preference", label: "Contact preferences" },
+];
 
 const RuntimeConfiguration = () => {
   const { module, setting } = useParams();
@@ -19,6 +27,8 @@ const RuntimeConfiguration = () => {
   const [ruleForm, setRuleForm] = useState(emptyRule);
   const [statusForm, setStatusForm] = useState(emptyStatus);
   const [priorityForm, setPriorityForm] = useState(emptyPriority);
+  const [formOptionForm, setFormOptionForm] = useState(emptyFormOption);
+  const [formOptionFilter, setFormOptionFilter] = useState("all");
   const [preview, setPreview] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -81,6 +91,15 @@ const RuntimeConfiguration = () => {
   const saveMapping = (categoryId, departmentIds) => execute(
     () => API.put(`/configuration/categories/${categoryId}/departments`, { departmentIds }), "Category mapping saved.",
   );
+  const saveFormOption = (event) => {
+    event.preventDefault();
+    const endpoint = `/configuration/form-options${formOptionForm.id ? `/${formOptionForm.id}` : ""}`;
+    execute(
+      () => formOptionForm.id ? API.put(endpoint, formOptionForm) : API.post(endpoint, formOptionForm),
+      "Grievance form option saved.",
+    );
+    setFormOptionForm(emptyFormOption);
+  };
 
   if (!data) return <div className="panel module-loading">Loading runtime configuration…</div>;
 
@@ -127,6 +146,30 @@ const RuntimeConfiguration = () => {
       </> : null}
 
       {mode === "notification-templates" ? <section className="panel runtime-config-list"><h2>Notification templates</h2>{templates.map((template, index) => <div className="notification-template-editor" key={template.id}><input onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} value={template.name} /><input disabled={template.channel !== "email"} onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subject_template: event.target.value } : item))} placeholder="Email subject" value={template.subject_template || ""} /><textarea onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, body_template: event.target.value } : item))} value={template.body_template} /><button className="button button-secondary" disabled={busy} onClick={() => saveTemplate(template)} type="button"><Icon name="check" size={15} /> Save</button></div>)}</section> : null}
+
+      {mode === "grievance-form-options" ? <>
+        <form className="panel runtime-config-form" onSubmit={saveFormOption}>
+          <select disabled={Boolean(formOptionForm.id)} onChange={(event) => setFormOptionForm((item) => ({ ...item, group: event.target.value, contactRequirement: "none" }))} value={formOptionForm.group}>
+            {formOptionGroups.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}
+          </select>
+          <input disabled={Boolean(formOptionForm.id)} maxLength="80" onChange={(event) => setFormOptionForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable key" required value={formOptionForm.key} />
+          <input maxLength="160" onChange={(event) => setFormOptionForm((item) => ({ ...item, label: event.target.value }))} placeholder="Display label" required value={formOptionForm.label} />
+          <textarea maxLength="255" onChange={(event) => setFormOptionForm((item) => ({ ...item, helpText: event.target.value }))} placeholder="Help text shown below the choice" value={formOptionForm.helpText || ""} />
+          {formOptionForm.group === "contact_preference" ? <select onChange={(event) => setFormOptionForm((item) => ({ ...item, contactRequirement: event.target.value }))} value={formOptionForm.contactRequirement}>
+            <option value="none">No additional contact field</option><option value="phone">Require phone</option><option value="email">Require email</option><option value="address">Require address</option>
+          </select> : null}
+          <input min="0" onChange={(event) => setFormOptionForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={formOptionForm.sortOrder} />
+          <label><input checked={formOptionForm.isActive} onChange={(event) => setFormOptionForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy} type="submit">Save choice</button>
+          {formOptionForm.id ? <button className="button button-secondary" onClick={() => setFormOptionForm(emptyFormOption)} type="button">Cancel edit</button> : null}
+        </form>
+        <section className="panel runtime-config-list">
+          <div className="runtime-config-row"><span><h2>Configured grievance choices</h2><small>Keys and groups are immutable. Labels, help text, order, requirements, and availability may change.</small></span><select aria-label="Filter option group" onChange={(event) => setFormOptionFilter(event.target.value)} value={formOptionFilter}><option value="all">All groups</option>{formOptionGroups.map((group) => <option key={group.value} value={group.value}>{group.label}</option>)}</select></div>
+          {Object.values(data.formOptions || {}).flat()
+            .filter((item) => formOptionFilter === "all" || item.group === formOptionFilter)
+            .map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.label}</strong><small>{item.group} · {item.key} · order {item.sortOrder} · {item.isActive ? "Active" : "Inactive"}{item.group === "contact_preference" ? ` · requires ${item.contactRequirement}` : ""}</small>{item.helpText ? <small>{item.helpText}</small> : null}</span><div><button onClick={() => setFormOptionForm({ ...item })} type="button">Edit</button>{item.isActive ? <button onClick={() => execute(() => API.delete(`/configuration/form-options/${item.id}`), "Grievance form option deactivated.")} type="button">Deactivate</button> : null}</div></div>)}
+        </section>
+      </> : null}
 
       {mode === "status" ? <>
         <form className="panel runtime-config-form" onSubmit={(event) => { event.preventDefault(); saveWorkflowItem("statuses", statusForm, () => setStatusForm(emptyStatus)); }}>

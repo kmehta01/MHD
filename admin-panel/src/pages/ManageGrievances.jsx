@@ -20,11 +20,6 @@ const viewFilters = {
 };
 
 const valueLabels = {
-  phone: "Phone",
-  email: "Email",
-  mail: "Mail",
-  in_person: "In person",
-  whatsapp: "WhatsApp",
   social_welfare: "Social welfare or assistance",
   child_protection: "Child protection services",
   family_support: "Family support services",
@@ -36,14 +31,6 @@ const valueLabels = {
   service_delays: "Service delays",
   discrimination: "Discrimination",
   policy: "Policy implementation",
-  telephone: "Telephone",
-  online_form: "Online form",
-  social_media: "Social media",
-  suggestion_box: "Suggestion box",
-  sign_language: "Sign language interpreter",
-  wheelchair: "Wheelchair accessibility",
-  home_visit: "Home visit due to mobility",
-  translation: "Language translation",
   yes: "Yes",
   no: "No",
   not_applicable: "Not applicable",
@@ -51,17 +38,21 @@ const valueLabels = {
   anonymous: "Anonymous",
 };
 
-const displayValue = (value) => {
+const readableFallback = (value) => /^[a-z0-9_-]+$/i.test(String(value))
+  ? String(value).replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  : value;
+
+const formatDisplayValue = (value, configuredLabels = {}) => {
   if (Array.isArray(value)) {
     return value.length
-      ? value.map((item) => valueLabels[item] || item).join(", ")
+      ? value.map((item) => configuredLabels[item] || valueLabels[item] || readableFallback(item)).join(", ")
       : "None selected";
   }
 
   if (value === true) return "Yes";
   if (value === false) return "No";
   if (!value) return "Not provided";
-  return valueLabels[value] || value;
+  return configuredLabels[value] || valueLabels[value] || readableFallback(value);
 };
 
 const formatBelizeDate = (value) => {
@@ -116,7 +107,7 @@ const ManageGrievances = () => {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
   const [error, setError] = useState("");
-  const [options, setOptions] = useState({ statuses: [], priorities: [], transitions: [], departments: [], officers: [], policy: null });
+  const [options, setOptions] = useState({ statuses: [], priorities: [], transitions: [], departments: [], officers: [], formOptions: {}, policy: null });
   const [lifecycle, setLifecycle] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [assignmentForm, setAssignmentForm] = useState({ departmentId: "", officerId: "", priority: "", note: "" });
@@ -137,6 +128,14 @@ const ManageGrievances = () => {
     loadedComplaint?.id === selectedId ? loadedComplaint : null;
   const statuses = options.statuses.filter((item) => item.is_active);
   const priorities = options.priorities.filter((item) => item.is_active);
+  const configuredValueLabels = useMemo(
+    () => Object.values(options.formOptions || {}).flat().reduce((labels, item) => {
+      labels[item.key] = item.label;
+      return labels;
+    }, {}),
+    [options.formOptions],
+  );
+  const displayValue = (value) => formatDisplayValue(value, configuredValueLabels);
 
   useEffect(() => {
     let active = true;

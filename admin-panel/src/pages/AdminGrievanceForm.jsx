@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import QRCode from "qrcode";
 import Icon from "../components/Icon";
 import API from "../services/api";
+import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
 
 const today = () => {
   const date = new Date();
@@ -55,7 +56,6 @@ const initialForm = (receivedBy = "") => ({
   affected_name: "",
   relationship: "",
   permission: "",
-  issue_type: [],
   issue_other: "",
   channel: ["in_person"],
   incident_date: "",
@@ -78,32 +78,6 @@ const initialForm = (receivedBy = "") => ({
   office_initial_classification: "",
   office_assigned_to: "",
 });
-
-const assistanceOptions = [
-  ["Spanish", "Spanish"],
-  ["Maya", "Maya"],
-  ["Garifuna", "Garifuna"],
-  ["Assisted completion", "Assisted completion"],
-  ["Large print", "Large print"],
-];
-
-const channelOptions = [
-  ["in_person", "In person"],
-  ["telephone", "Telephone"],
-  ["email", "Email"],
-  ["online_form", "Online form"],
-  ["mail", "Mail"],
-  ["whatsapp", "WhatsApp"],
-  ["social_media", "Social media"],
-  ["suggestion_box", "Suggestion box"],
-];
-
-const accommodationOptions = [
-  ["sign_language", "Sign language interpreter"],
-  ["wheelchair", "Wheelchair accessibility"],
-  ["home_visit", "Home visit due to mobility"],
-  ["translation", "Language translation"],
-];
 
 const fileTypeRegistry = {
   PDF: { accept: ".pdf", mime: ["application/pdf"] },
@@ -135,7 +109,7 @@ const AdminGrievanceForm = () => {
   const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
   const [policy, setPolicy] = useState(null);
-  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [] });
+  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [], formOptions: {} });
   const qrCanvasRef = useRef(null);
   const anonymous = form.submission_type === "anonymous";
   const submissionPolicy = policy?.grievanceSubmission;
@@ -145,14 +119,24 @@ const AdminGrievanceForm = () => {
   const maximumFiles = submissionPolicy
     ? (submissionPolicy.allowMultipleAttachments ? submissionPolicy.maximumAttachmentCount : 1)
     : 0;
+  const normalizedFormOptions = normalizeGrievanceFormOptions(catalog.formOptions);
+  const assistanceOptions = normalizedFormOptions.assistance;
+  const contactOptions = normalizedFormOptions.contactPreferences;
+  const channelOptions = normalizedFormOptions.submissionChannels;
+  const accommodationOptions = normalizedFormOptions.accommodations;
 
   useEffect(() => {
     let active = true;
     Promise.all([API.get("/public/settings"), API.get("/public/catalog")])
       .then(([settingsResponse, catalogResponse]) => {
         if (!active) return;
+        const nextCatalog = catalogResponse.data.data;
+        if (!hasRequiredGrievanceFormOptions(nextCatalog.formOptions)) {
+          throw new Error("Required grievance form choices are unavailable");
+        }
         setPolicy(settingsResponse.data.data);
-        setCatalog(catalogResponse.data.data);
+        setCatalog(nextCatalog);
+        setForm((current) => reconcileGrievanceFormSelections(current, nextCatalog.formOptions));
       })
       .catch((requestError) => {
         if (active) setError(requestError.response?.data?.message || "Runtime grievance settings could not be loaded.");
@@ -226,19 +210,20 @@ const AdminGrievanceForm = () => {
   };
 
   const validateStep = (stepNumber) => {
-    if (!submissionPolicy) return "Runtime grievance settings are unavailable. Submission is disabled.";
+    if (!submissionPolicy || !contactOptions.length || !channelOptions.length) return "Runtime grievance settings are unavailable. Submission is disabled.";
     if (stepNumber === 1 && !anonymous) {
       if (!form.comp_name.trim()) return "Enter the complainant's full name.";
       if (!form.contact_pref) return "Select a preferred contact method.";
-      if (["phone", "whatsapp"].includes(form.contact_pref) && form.comp_phone.replace(/\D/g, "").length < 7) {
+      const contactRequirement = contactOptions.find((item) => item.key === form.contact_pref)?.contactRequirement;
+      if (contactRequirement === "phone" && form.comp_phone.replace(/\D/g, "").length < 7) {
         return "Enter a valid phone number for the selected contact method.";
       }
-      if (form.contact_pref === "email" && !form.comp_email.trim()) return "Enter an email address.";
+      if (contactRequirement === "email" && !form.comp_email.trim()) return "Enter an email address.";
       if (form.comp_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.comp_email)) return "Enter a valid email address.";
       if (submissionPolicy.mobileNumberRequired && form.comp_phone.replace(/\D/g, "").length < 7) return "Enter a valid mobile number.";
       if (submissionPolicy.emailAddressRequired && !form.comp_email.trim()) return "Enter an email address.";
       if (submissionPolicy.identificationNumberRequired && form.identification_number.replace(/[^a-z0-9]/gi, "").length < 4) return "Enter a valid identification number.";
-      if (form.contact_pref === "mail" && !form.comp_address.trim()) return "Enter a mailing address.";
+      if (contactRequirement === "address" && !form.comp_address.trim()) return "Enter a mailing address.";
       if (!form.on_behalf) return "Select whether the complaint is being submitted on behalf of someone else.";
       if (form.on_behalf === "yes" && (!form.affected_name.trim() || !form.relationship.trim() || !form.permission)) {
         return "Complete all affected-person information.";
@@ -436,17 +421,17 @@ const AdminGrievanceForm = () => {
             <fieldset className="admin-grievance-fieldset">
               <legend>Language and assistance <small>Optional — select one</small></legend>
               <div className="admin-grievance-choice-grid">
-                {assistanceOptions.map(([value, label]) => (
-                  <label className={`admin-grievance-choice ${form.assistance.includes(value) ? "selected" : ""}`} key={value}>
+                {assistanceOptions.map((option) => (
+                  <label className={`admin-grievance-choice ${form.assistance.includes(option.key) ? "selected" : ""}`} key={option.key}>
                     <input
-                      checked={form.assistance.includes(value)}
-                      disabled={form.assistance.length > 0 && !form.assistance.includes(value)}
+                      checked={form.assistance.includes(option.key)}
+                      disabled={form.assistance.length > 0 && !form.assistance.includes(option.key)}
                       name="assistance"
                       onChange={updateAssistance}
                       type="checkbox"
-                      value={value}
+                      value={option.key}
                     />
-                    <span>{label}</span>
+                    <span>{option.label}{option.helpText ? <small>{option.helpText}</small> : null}</span>
                   </label>
                 ))}
               </div>
@@ -461,7 +446,7 @@ const AdminGrievanceForm = () => {
                   <label><span>Email address</span><input autoComplete="email" name="comp_email" onChange={update} type="email" value={form.comp_email} /></label>
                   {submissionPolicy?.identificationNumberRequired ? <label><span>Identification number *</span><input name="identification_number" onChange={update} value={form.identification_number} /></label> : null}
                   <label><span>Mailing address</span><input autoComplete="street-address" name="comp_address" onChange={update} value={form.comp_address} /></label>
-                  <label><span>Preferred contact method *</span><select name="contact_pref" onChange={update} value={form.contact_pref}><option value="">Select contact method</option><option value="phone">Phone</option><option value="email">Email</option><option value="mail">Mail</option><option value="in_person">In person</option><option value="whatsapp">WhatsApp</option></select></label>
+                  <label><span>Preferred contact method *</span><select name="contact_pref" onChange={update} value={form.contact_pref}><option value="">Select contact method</option>{contactOptions.map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}</select></label>
                   <label><span>Submitting on behalf of someone? *</span><select name="on_behalf" onChange={update} value={form.on_behalf}><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
                 </div>
                 {form.on_behalf === "yes" ? (
@@ -490,7 +475,7 @@ const AdminGrievanceForm = () => {
             <label className="admin-grievance-wide"><span>{submissionPolicy?.allowCitizenCategorySelection ? "Additional subject detail" : "Complaint subject *"}</span><input name="issue_other" onChange={update} placeholder="Briefly identify the issue" required={!submissionPolicy?.allowCitizenCategorySelection} value={form.issue_other} /></label>
             <fieldset className="admin-grievance-fieldset">
               <legend>How was the grievance received? *</legend>
-              <div className="admin-grievance-choice-grid compact">{channelOptions.map(([value, label]) => choice("channel", value, label, "checkbox"))}</div>
+              <div className="admin-grievance-choice-grid compact">{channelOptions.map((item) => choice("channel", item.key, item.label, "checkbox"))}</div>
             </fieldset>
             <div className="admin-grievance-grid">
               <label><span>Incident date *</span><input max={today()} name="incident_date" onChange={update} type="date" value={form.incident_date} /></label>
@@ -516,7 +501,7 @@ const AdminGrievanceForm = () => {
             {form.has_witnesses === "yes" ? <div className="admin-grievance-subsection"><h3>Witness information</h3><div className="admin-grievance-grid"><label><span>Witness name *</span><input name="witness_name" onChange={update} value={form.witness_name} /></label><label><span>Witness phone *</span><input name="witness_phone" onChange={update} type="tel" value={form.witness_phone} /></label></div></div> : null}
             <fieldset className="admin-grievance-fieldset">
               <legend>Accessibility accommodations <small>Optional</small></legend>
-              <div className="admin-grievance-choice-grid compact">{accommodationOptions.map(([value, label]) => choice("accommodation", value, label, "checkbox"))}</div>
+              <div className="admin-grievance-choice-grid compact">{accommodationOptions.map((item) => choice("accommodation", item.key, item.label, "checkbox"))}</div>
             </fieldset>
             <label className="admin-grievance-wide"><span>Other accommodation</span><input name="accommodation_other" onChange={update} value={form.accommodation_other} /></label>
           </section>

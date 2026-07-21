@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const fs = require("node:fs");
+const path = require("node:path");
 const { adaptForeignKeyColumnTypes, ensureForeignKeys, foreignKeyReferences } = require("../src/utils/migration-sql");
 
 const migration = `
@@ -44,4 +46,14 @@ test("foreign-key installation repairs an existing signedness mismatch", async (
   await ensureForeignKeys(connection, [["fk_status", "complaints", "status_id", "complaint_statuses", "id"]]);
   assert.ok(statements.some((sql) => sql.includes("MODIFY COLUMN `status_id` SMALLINT(5) NULL")));
   assert.ok(statements.some((sql) => sql.includes("ADD CONSTRAINT `fk_status`")));
+});
+
+test("grievance-form migration preserves compatibility while seeding stable choices", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../database/migrations/20260722_grievance_form_options.sql"), "utf8");
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS grievance_form_options/i);
+  assert.match(sql, /UNIQUE KEY unique_grievance_form_option \(option_group, option_key\)/i);
+  assert.match(sql, /'large_print', 'Large print'/i);
+  assert.match(sql, /ELSE assistance END/i);
+  assert.match(sql, /MODIFY COLUMN contact_pref VARCHAR\(80\) NULL/i);
+  assert.doesNotMatch(sql, /UPDATE complaints SET issue_type/i);
 });

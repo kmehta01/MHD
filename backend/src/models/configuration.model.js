@@ -1,7 +1,7 @@
 const db = require("../config/db");
 
 const listPublicCatalog = async () => {
-  const [[categories], [locations], [departments]] = await Promise.all([
+  const [[categories], [locations], [departments], formOptions] = await Promise.all([
     db.query(`SELECT c.id, c.code, c.name,
       GROUP_CONCAT(DISTINCT CASE WHEN m.is_active=1 AND d.is_active=1 THEN m.department_id END ORDER BY m.department_id SEPARATOR ',') AS department_ids
       FROM complaint_categories c
@@ -10,12 +10,81 @@ const listPublicCatalog = async () => {
       WHERE c.is_active=1 GROUP BY c.id ORDER BY c.name`),
     db.query(`SELECT id, code, name FROM complaint_locations WHERE is_active=1 ORDER BY name`),
     db.query(`SELECT id, code, name FROM departments WHERE is_active=1 ORDER BY name`),
+    listFormOptions({ activeOnly: true }),
   ]);
   return { categories: categories.map((row) => ({
     ...row,
     departmentIds: String(row.department_ids || "").split(",").filter(Boolean).map(Number),
     department_ids: undefined,
-  })), locations, departments };
+  })), locations, departments, formOptions };
+};
+
+const formOptionGroupNames = Object.freeze({
+  assistance: "assistance",
+  contact_preference: "contactPreferences",
+  submission_channel: "submissionChannels",
+  accommodation: "accommodations",
+});
+
+async function listFormOptions({ activeOnly = false } = {}) {
+  const [rows] = await db.query(
+    `SELECT id, option_group, option_key, display_label, help_text, contact_requirement,
+            sort_order, is_active, created_at, updated_at
+       FROM grievance_form_options ${activeOnly ? "WHERE is_active=1" : ""}
+      ORDER BY FIELD(option_group,'assistance','contact_preference','submission_channel','accommodation'), sort_order, id`,
+  );
+  const grouped = Object.fromEntries(Object.values(formOptionGroupNames).map((name) => [name, []]));
+  for (const row of rows) {
+    grouped[formOptionGroupNames[row.option_group]].push({
+      id: row.id, group: row.option_group, key: row.option_key,
+      label: row.display_label, helpText: row.help_text,
+      contactRequirement: row.contact_requirement, sortOrder: row.sort_order,
+      isActive: Boolean(row.is_active), createdAt: row.created_at, updatedAt: row.updated_at,
+    });
+  }
+  return grouped;
+}
+
+const saveFormOption = async (item) => {
+  if (item.id) {
+    const [result] = await db.query(
+      `UPDATE grievance_form_options SET display_label=?, help_text=?, contact_requirement=?, sort_order=?, is_active=? WHERE id=?`,
+      [item.label, item.helpText, item.contactRequirement, item.sortOrder, item.isActive ? 1 : 0, item.id],
+    );
+    return result.affectedRows ? item.id : null;
+  }
+  const [result] = await db.query(
+    `INSERT INTO grievance_form_options
+       (option_group, option_key, display_label, help_text, contact_requirement, sort_order, is_active)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [item.group, item.key, item.label, item.helpText, item.contactRequirement,
+      item.sortOrder, item.isActive ? 1 : 0],
+  );
+  return result.insertId;
+};
+
+const getFormOption = async (id) => {
+  const [rows] = await db.query(`SELECT * FROM grievance_form_options WHERE id=? LIMIT 1`, [id]);
+  return rows[0] || null;
+};
+
+const getFormOptionDeactivationDependencies = async (id) => {
+  const option = await getFormOption(id);
+  if (!option) return null;
+  const [[active]] = await db.query(
+    `SELECT COUNT(*) count FROM grievance_form_options WHERE option_group=? AND is_active=1 AND id<>?`,
+    [option.option_group, id],
+  );
+  return {
+    option,
+    remainingActive: Number(active.count || 0),
+    requiredGroup: ["submission_channel", "contact_preference"].includes(option.option_group),
+  };
+};
+
+const deactivateFormOption = async (id) => {
+  const [result] = await db.query(`UPDATE grievance_form_options SET is_active=0 WHERE id=?`, [id]);
+  return result.affectedRows;
 };
 
 const catalogTables = Object.freeze({
@@ -294,6 +363,9 @@ module.exports = {
   createRoutingRule, deactivateCatalogItem, deactivateHoliday, deactivateRoutingRule,
   findActiveCatalogItem, findActiveCategoryMapping, findPriorityByName, findRoutingRule, findStatusByName,
   getDeactivationDependencies,
+  getFormOption, getFormOptionDeactivationDependencies,
   listAssignableOfficers, listCatalog, listHolidays, listPublicCatalog,
-  listRoutingRules, listWorkflow, saveCatalogItem, saveCategoryMappings, saveHoliday, savePriority, saveStatus, saveTransition, updateRoutingRule,
+  listFormOptions, listRoutingRules, listWorkflow, saveCatalogItem, saveCategoryMappings,
+  saveFormOption, saveHoliday, savePriority, saveStatus, saveTransition,
+  deactivateFormOption, updateRoutingRule,
 };

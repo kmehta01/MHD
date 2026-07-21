@@ -3,6 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import QRCode from "qrcode";
 import RecaptchaCheckbox from "../components/RecaptchaCheckbox";
 import { formatPortalDateTime } from "../utils/date-format";
+import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
@@ -12,44 +13,6 @@ const stepDefinitions = [
   { key: "stepDetails", caption: "C" },
   { key: "stepSupporting", caption: "D & E" },
   { key: "stepDeclaration", caption: "F" },
-];
-
-const assistanceOptions = [
-  { value: "Spanish", label: "Spanish" },
-  { value: "Maya", label: "Maya", note: "Version in preparation" },
-  {
-    value: "Garifuna",
-    label: "Garifuna",
-    note: "Version in preparation",
-  },
-  { value: "Assisted completion", label: "Assisted completion" },
-  { value: "Large print", label: "Large print" },
-];
-
-const contactOptions = [
-  { value: "phone", label: "Phone" },
-  { value: "email", label: "Email" },
-  { value: "mail", label: "Mail" },
-  { value: "in_person", label: "In person" },
-  { value: "whatsapp", label: "WhatsApp" },
-];
-
-const channelOptions = [
-  { value: "in_person", label: "In person" },
-  { value: "telephone", label: "Telephone" },
-  { value: "email", label: "Email" },
-  { value: "online_form", label: "Online form" },
-  { value: "mail", label: "Mail" },
-  { value: "whatsapp", label: "WhatsApp" },
-  { value: "social_media", label: "Social media" },
-  { value: "suggestion_box", label: "Suggestion box" },
-];
-
-const accommodationOptions = [
-  { value: "sign_language", label: "Sign language interpreter" },
-  { value: "wheelchair", label: "Wheelchair accessibility" },
-  { value: "home_visit", label: "Home visit due to mobility" },
-  { value: "translation", label: "Language translation" },
 ];
 
 const fileTypeRegistry = {
@@ -86,7 +49,6 @@ const createInitialForm = (defaultLocation = "") => ({
   affected_name: "",
   relationship: "",
   permission: "",
-  issue_type: [],
   issue_other: "",
   channel: [],
   incident_date: "",
@@ -185,7 +147,7 @@ function SubmitComplaint() {
   const [submitting, setSubmitting] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaResetVersion, setCaptchaResetVersion] = useState(0);
-  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [] });
+  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [], formOptions: {} });
   const [catalogError, setCatalogError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [qrCodeReady, setQrCodeReady] = useState(false);
@@ -212,6 +174,12 @@ function SubmitComplaint() {
   const allowedMimeTypes = allowedTypes.flatMap((type) => fileTypeRegistry[type].mimeTypes);
   const attachmentAccept = allowedTypes.map((type) => fileTypeRegistry[type].accept).join(",");
   const captcha = meta?.capabilities?.captcha || {};
+  const normalizedFormOptions = normalizeGrievanceFormOptions(catalog.formOptions);
+  const toFormChoices = (items = []) => items.map((item) => ({ ...item, value: item.key, note: item.helpText }));
+  const assistanceOptions = toFormChoices(normalizedFormOptions.assistance);
+  const contactOptions = toFormChoices(normalizedFormOptions.contactPreferences);
+  const channelOptions = toFormChoices(normalizedFormOptions.submissionChannels);
+  const accommodationOptions = toFormChoices(normalizedFormOptions.accommodations);
   const trackingMethod = ticketSettings.trackingVerificationMethod;
   const trackingDetailLabels = {
     "Ticket Number and Phone Number": "Phone number",
@@ -247,7 +215,13 @@ function SubmitComplaint() {
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok || !payload.status) throw new Error(payload.message || "Unable to load grievance options");
-        if (active) setCatalog(payload.data);
+        if (!hasRequiredGrievanceFormOptions(payload.data.formOptions)) {
+          throw new Error("Required grievance form choices are unavailable");
+        }
+        if (active) {
+          setCatalog(payload.data);
+          setForm((current) => reconcileGrievanceFormSelections(current, payload.data.formOptions));
+        }
       })
       .catch((error) => { if (active) setCatalogError(error.message); });
     return () => { active = false; };
@@ -396,6 +370,11 @@ function SubmitComplaint() {
   const getStepErrors = (step) => {
     const errors = {};
 
+    if (!contactOptions.length || !channelOptions.length) {
+      errors.formOptions = "Required grievance form choices are unavailable.";
+      return errors;
+    }
+
     if (step === 1 && !isAnonymous) {
       if (!form.comp_name.trim()) {
         errors.comp_name = "Full name is required.";
@@ -418,17 +397,18 @@ function SubmitComplaint() {
       if (!form.contact_pref) {
         errors.contact_pref = "Select a preferred contact method.";
       }
+      const contactRequirement = contactOptions.find((option) => option.value === form.contact_pref)?.contactRequirement;
       if (
-        ["phone", "whatsapp"].includes(form.contact_pref) &&
+        contactRequirement === "phone" &&
         form.comp_phone.replace(/\D/g, "").length < 7
       ) {
         errors.comp_phone =
           "Enter a phone number with at least 7 digits for this contact method.";
       }
-      if (form.contact_pref === "email" && !form.comp_email.trim()) {
+      if (contactRequirement === "email" && !form.comp_email.trim()) {
         errors.comp_email = "Email is required for email contact.";
       }
-      if (form.contact_pref === "mail" && !form.comp_address.trim()) {
+      if (contactRequirement === "address" && !form.comp_address.trim()) {
         errors.comp_address = "Address is required for mail contact.";
       }
       if (!form.on_behalf) {
@@ -449,8 +429,7 @@ function SubmitComplaint() {
 
     if (step === 2) {
       if (!submissionSettings.allowCitizenCategorySelection && !form.issue_other.trim()) {
-        errors.issue_type =
-          "Select at least one issue type or specify another.";
+        errors.issue_type = "Enter a complaint subject.";
       }
       if (submissionSettings.allowCitizenCategorySelection && !form.category_id) {
         errors.category_id = "Complaint category is required.";
@@ -937,7 +916,7 @@ function SubmitComplaint() {
                                 key={option.value}
                                 label={option.label}
                                 name="assistance"
-                                // note={option.note}
+                                note={option.note}
                                 onChange={updateAssistance}
                                 type="checkbox"
                                 value={option.value}
@@ -1646,7 +1625,7 @@ function SubmitComplaint() {
                             <div>
                               <span>Issue type</span>
                               <strong>
-                                {[...selectedIssueLabels, form.issue_other]
+                                {selectedIssueLabels
                                   .filter(Boolean)
                                   .join(", ") || "Not selected"}
                               </strong>
@@ -1826,7 +1805,7 @@ function SubmitComplaint() {
                         ) : (
                           <button
                             className="grievance-button grievance-button--submit"
-                            disabled={submitting || (submissionSettings.enableCaptcha && !captcha.ready)}
+                            disabled={Boolean(catalogError) || submitting || (submissionSettings.enableCaptcha && !captcha.ready)}
                             type="submit"
                           >
                             {submitting ? `${t("submit")}…` : t("submit")}

@@ -1,7 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
+const db = require("../src/config/db");
 const ConfigurationModel = require("../src/models/configuration.model");
 const controller = require("../src/controllers/configuration.controller");
+
+test.after(async () => db.end());
 
 const response = () => ({
   statusCode: 200, body: null,
@@ -45,4 +48,41 @@ test("workflow transitions require two active status IDs", async (t) => {
   const res = response();
   await controller.saveTransition({ body: { fromStatusId: 1, toStatusId: 2, isActive: true } }, res);
   assert.equal(res.statusCode, 400);
+});
+
+test("form-option updates preserve immutable key and group", async (t) => {
+  let saved;
+  t.mock.method(ConfigurationModel, "getFormOption", async () => ({ id: 12, option_group: "assistance", option_key: "large_print" }));
+  t.mock.method(ConfigurationModel, "saveFormOption", async (item) => { saved = item; return 12; });
+  const res = response();
+  await controller.saveFormOption({
+    params: { id: "12" }, user: { id: 1 }, body: {
+      group: "assistance", key: "attempted_rewrite", label: "Accessible large print",
+      helpText: "Available on request", sortOrder: 5, isActive: true,
+    },
+  }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(saved.key, undefined);
+  assert.equal(saved.group, "assistance");
+  assert.equal(saved.label, "Accessible large print");
+});
+
+test("form-option updates reject changing the immutable group", async (t) => {
+  t.mock.method(ConfigurationModel, "getFormOption", async () => ({ id: 12, option_group: "assistance" }));
+  const res = response();
+  await controller.saveFormOption({
+    params: { id: "12" }, body: { group: "accommodation", label: "Moved option", isActive: true },
+  }, res);
+  assert.equal(res.statusCode, 409);
+  assert.match(res.body.message, /groups are immutable/i);
+});
+
+test("form-option deactivation protects the last required choice", async (t) => {
+  t.mock.method(ConfigurationModel, "getFormOptionDeactivationDependencies", async () => ({
+    requiredGroup: true, remainingActive: 0,
+  }));
+  const res = response();
+  await controller.deactivateFormOption({ params: { id: "8" } }, res);
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body.dependencies, { remainingActive: 0 });
 });

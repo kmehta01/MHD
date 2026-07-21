@@ -15,6 +15,7 @@ const migrations = [
   ["20260720-grievance-lifecycle", "apply-grievance-lifecycle-migration.js"],
   ["20260720-operational-runtime", "apply-operational-runtime-migration.js"],
   ["20260721-master-data", "apply-master-data-migration.js"],
+  ["20260722-grievance-form-options", "apply-grievance-form-options-migration.js"],
 ];
 const requiredRuntimeTables = [
   "admin_audit_logs", "admin_auth_events", "admin_sessions",
@@ -24,6 +25,7 @@ const requiredRuntimeTables = [
   "department_category_mappings", "workflow_transitions", "complaint_status_history",
   "complaint_assignment_history", "assignment_routing_rules", "public_holidays",
   "notification_outbox", "background_job_leases", "report_jobs",
+  "grievance_form_options",
 ];
 
 const connect = () => mysql.createConnection({

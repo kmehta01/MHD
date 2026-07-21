@@ -329,9 +329,10 @@ const getComplaintById = async (req, res) => {
 
 const getComplaintOptions = async (_req, res) => {
   try {
-    const [workflow, settings, catalog, officers] = await Promise.all([
+    const [workflow, settings, catalog, officers, formOptions] = await Promise.all([
       ConfigurationModel.listWorkflow(), SettingsPolicy.getPolicy(),
       ConfigurationModel.listPublicCatalog(), ConfigurationModel.listAssignableOfficers(),
+      ConfigurationModel.listFormOptions(),
     ]);
     return res.json({
       status: true,
@@ -342,6 +343,7 @@ const getComplaintOptions = async (_req, res) => {
         departments: catalog.departments,
         categories: catalog.categories,
         locations: catalog.locations,
+        formOptions,
         officers,
         policy: { assignment: settings.assignment, dueDate: settings.dueDate, workflow: settings.workflow, privacy: { allowAttachmentDownload: settings.privacy.allowAttachmentDownload } },
       },

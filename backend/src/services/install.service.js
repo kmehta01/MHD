@@ -20,6 +20,7 @@ const installMigrationPaths = [
   path.join(projectRoot, "database", "migrations", "20260720_runtime_general_settings.sql"),
   path.join(projectRoot, "database", "migrations", "20260720_grievance_lifecycle.sql"),
   path.join(projectRoot, "database", "migrations", "20260721_master_data_runtime.sql"),
+  path.join(projectRoot, "database", "migrations", "20260722_grievance_form_options.sql"),
   path.join(projectRoot, "database", "migrations", "20260720_operational_runtime.sql"),
 ];
 const masterDataForeignKeys = [
@@ -47,6 +48,7 @@ const installerTables = [
   "assignment_routing_rules",
   "workflow_transitions",
   "department_category_mappings",
+  "grievance_form_options",
   "complaint_locations",
   "complaint_categories",
   "complaint_priorities",

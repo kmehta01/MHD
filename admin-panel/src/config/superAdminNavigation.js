@@ -132,6 +132,10 @@ export const superAdminNavigation = [
         path: "/system-settings/priority",
       },
       {
+        name: "Grievance Form Choices",
+        path: "/system-settings/grievance-form-options",
+      },
+      {
         name: "Due-Date Rules",
         path: "/system-settings/due-date-rules",
       },

@@ -35,14 +35,15 @@ const getPublicCatalog = async (_req, res) => {
 
 const getConfiguration = async (_req, res) => {
   try {
-    const [categories, locations, departments, holidays, routingRules, workflow, officers, publicCatalog] = await Promise.all([
+    const [categories, locations, departments, holidays, routingRules, workflow, officers, publicCatalog, formOptions] = await Promise.all([
       ConfigurationModel.listCatalog("categories"), ConfigurationModel.listCatalog("locations"),
       ConfigurationModel.listCatalog("departments"),
       ConfigurationModel.listHolidays(), ConfigurationModel.listRoutingRules(),
       ConfigurationModel.listWorkflow(), ConfigurationModel.listAssignableOfficers(),
       ConfigurationModel.listPublicCatalog(),
+      ConfigurationModel.listFormOptions(),
     ]);
-    return res.json({ status: true, data: { categories, locations, departments, categoryMappings: publicCatalog.categories.map(({ id, departmentIds }) => ({ categoryId: id, departmentIds })), holidays, routingRules, workflow, officers } });
+    return res.json({ status: true, data: { categories, locations, departments, categoryMappings: publicCatalog.categories.map(({ id, departmentIds }) => ({ categoryId: id, departmentIds })), formOptions, holidays, routingRules, workflow, officers } });
   } catch (error) { return sendError(res, error, "Failed to load configuration"); }
 };
 
@@ -185,6 +186,58 @@ const saveTransition = async (req, res) => {
   } catch (error) { return sendError(res, error, "Failed to save transition"); }
 };
 
+const formOptionGroups = new Set(["assistance", "submission_channel", "accommodation", "contact_preference"]);
+const contactRequirements = new Set(["none", "phone", "email", "address"]);
+
+const saveFormOption = async (req, res) => {
+  try {
+    const id = req.params.id ? positiveId(req.params.id) : null;
+    const group = requiredText(req.body.group, "Option group", 40);
+    if (!formOptionGroups.has(group)) throw Object.assign(new Error("Invalid grievance form option group"), { statusCode: 400 });
+    const requirement = group === "contact_preference"
+      ? requiredText(req.body.contactRequirement || "none", "Contact requirement", 20)
+      : "none";
+    if (!contactRequirements.has(requirement)) throw Object.assign(new Error("Invalid contact requirement"), { statusCode: 400 });
+    if (id) {
+      const existing = await ConfigurationModel.getFormOption(id);
+      if (!existing) return res.status(404).json({ status: false, message: "Form option not found" });
+      if (existing.option_group !== group) throw Object.assign(new Error("Option groups are immutable"), { statusCode: 409 });
+    }
+    if (id && req.body.isActive === false) {
+      const dependencies = await ConfigurationModel.getFormOptionDeactivationDependencies(id);
+      if (dependencies?.requiredGroup && dependencies.remainingActive === 0) {
+        return res.status(409).json({ status: false, message: "At least one active option is required for this group", dependencies: { remainingActive: 0 } });
+      }
+    }
+    const itemId = await ConfigurationModel.saveFormOption({
+      id, group,
+      key: id ? undefined : normalizedKey(req.body.key, "Option key"),
+      label: requiredText(req.body.label, "Display label"),
+      helpText: String(req.body.helpText || "").trim().slice(0, 255) || null,
+      contactRequirement: requirement,
+      sortOrder: Math.max(0, Number.parseInt(req.body.sortOrder, 10) || 0),
+      isActive: req.body.isActive !== false,
+    });
+    if (!itemId) return res.status(404).json({ status: false, message: "Form option not found" });
+    await audit(req, "CONFIGURATION_UPDATED", "grievance_form_option", itemId);
+    return res.status(id ? 200 : 201).json({ status: true, data: { id: itemId } });
+  } catch (error) { return sendError(res, error, "Failed to save grievance form option"); }
+};
+
+const deactivateFormOption = async (req, res) => {
+  try {
+    const id = positiveId(req.params.id);
+    const dependencies = await ConfigurationModel.getFormOptionDeactivationDependencies(id);
+    if (!dependencies) return res.status(404).json({ status: false, message: "Form option not found" });
+    if (dependencies.requiredGroup && dependencies.remainingActive === 0) {
+      return res.status(409).json({ status: false, message: "At least one active option is required for this group", dependencies: { remainingActive: 0 } });
+    }
+    await ConfigurationModel.deactivateFormOption(id);
+    await audit(req, "CONFIGURATION_UPDATED", "grievance_form_option", id);
+    return res.json({ status: true, message: "Form option deactivated" });
+  } catch (error) { return sendError(res, error, "Failed to deactivate grievance form option"); }
+};
+
 const saveRoutingRule = async (req, res) => {
   try {
     const id = req.params.id ? positiveId(req.params.id) : null;
@@ -239,4 +292,4 @@ const deactivateHoliday = async (req, res) => {
   } catch (error) { return sendError(res, error, "Failed to deactivate holiday"); }
 };
 
-module.exports = { deactivateCatalogItem, deactivateHoliday, deactivateRoutingRule, deactivateWorkflowItem, getConfiguration, getPublicCatalog, saveCatalogItem, saveCategoryMappings, saveHoliday, savePriority, saveRoutingRule, saveStatus, saveTransition };
+module.exports = { deactivateCatalogItem, deactivateFormOption, deactivateHoliday, deactivateRoutingRule, deactivateWorkflowItem, getConfiguration, getPublicCatalog, saveCatalogItem, saveCategoryMappings, saveFormOption, saveHoliday, savePriority, saveRoutingRule, saveStatus, saveTransition };
