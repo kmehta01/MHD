@@ -245,12 +245,6 @@ const createComplaintTables = async (connection) => {
 
   await connection.query(`
     UPDATE complaints
-    SET due_at = DATE_ADD(created_at, INTERVAL 10 DAY)
-    WHERE due_at IS NULL
-  `);
-
-  await connection.query(`
-    UPDATE complaints
     SET resolved_at = COALESCE(updated_at, created_at)
     WHERE status IN ('Resolved', 'Closed')
       AND resolved_at IS NULL

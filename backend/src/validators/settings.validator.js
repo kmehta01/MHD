@@ -111,6 +111,9 @@ const validateConditionalRules = (settings, errors) => {
   if (!settings.grievanceSubmission?.allowedFileTypes?.length) {
     errors["grievanceSubmission.allowedFileTypes"] = "Select at least one allowed attachment type";
   }
+  if (!settings.workflow?.resolutionDocumentAllowedFileTypes?.length) {
+    errors["workflow.resolutionDocumentAllowedFileTypes"] = "Select at least one allowed resolution document type";
+  }
   const trackingMethod = settings.ticket?.trackingVerificationMethod;
   if (trackingMethod === "Ticket Number and Phone Number" && !settings.grievanceSubmission?.mobileNumberRequired) {
     errors["ticket.trackingVerificationMethod"] = "Phone verification requires mobile numbers on named submissions";

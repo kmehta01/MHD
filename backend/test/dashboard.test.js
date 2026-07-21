@@ -164,3 +164,23 @@ test("Super Admin receives every dashboard widget", () => {
   assert.equal(Object.keys(payload.overview).length, 12);
   assert.equal(Object.keys(payload.charts).length, 8);
 });
+
+test("disabled due dates omit operational deadline widgets and expose policy metadata", () => {
+  const settings = JSON.parse(JSON.stringify(require("../src/utils/default-general-settings").generalSettingsDefaults));
+  settings.dueDate.dueDateRequired = false;
+  const payload = buildDashboardPayload({
+    user: { role_slug: "super-admin", permissions: [] },
+    scope: { type: "all", departmentId: null },
+    settings,
+    result: {
+      overview: { overdue: 9, due_today: 4 }, status: [], departments: [], trend: [], priorities: [],
+      openResolved: {}, resolution: { average_days: null, resolved_samples: 0 },
+      resolutionByDepartment: [], overdueByDepartment: [{ label: "Test", value: 9 }],
+    },
+  });
+  assert.equal("overdue" in payload.overview, false);
+  assert.equal("due_today" in payload.overview, false);
+  assert.equal("overdue_by_department" in payload.charts, false);
+  assert.equal(payload.meta.due_date_policy.enabled, false);
+  assert.equal(payload.meta.due_date_policy.time_zone, settings.portal.timeZone);
+});

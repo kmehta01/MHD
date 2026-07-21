@@ -1,3 +1,9 @@
+const {
+  DEFAULT_COMPLAINT_ATTACHMENT_TYPES,
+  DEFAULT_RESOLUTION_ATTACHMENT_TYPES,
+  SUPPORTED_ATTACHMENT_TYPE_KEYS,
+} = require("../config/attachment-types");
+
 const define = (group, key, defaultValue, valueType = "string", rules = {}) => ({
   group,
   key,
@@ -43,7 +49,7 @@ const generalSettingDefinitions = [
   define("grievanceSubmission", "allowMultipleAttachments", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "maximumAttachmentCount", 3, "number", { integer: true, min: 1, max: 10, isPublic: true }),
   define("grievanceSubmission", "maximumAttachmentSizeMb", 5, "number", { integer: true, min: 1, max: 25, isPublic: true }),
-  define("grievanceSubmission", "allowedFileTypes", ["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX"], "json", { arrayOptions: ["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX", "XLS", "XLSX"], isPublic: true }),
+  define("grievanceSubmission", "allowedFileTypes", [...DEFAULT_COMPLAINT_ATTACHMENT_TYPES], "json", { arrayOptions: [...SUPPORTED_ATTACHMENT_TYPE_KEYS], dynamicOptions: "attachmentTypes", isPublic: true }),
   define("grievanceSubmission", "maximumDescriptionLength", 5000, "number", { integer: true, min: 250, max: 50000, isPublic: true }),
   define("grievanceSubmission", "enableCaptcha", false, "boolean", { isPublic: true }),
   define("grievanceSubmission", "displayDeclarationCheckbox", true, "boolean", { isPublic: true }),
@@ -83,6 +89,8 @@ const generalSettingDefinitions = [
   define("workflow", "reopenPermission", "Super Admin and Admin", "string", { options: ["Super Admin Only", "Super Admin and Admin"] }),
   define("workflow", "requireCommentOnStatusChange", true, "boolean"),
   define("workflow", "requireResolutionDocument", false, "boolean"),
+  define("workflow", "resolutionDocumentMaximumSizeMb", 5, "number", { integer: true, min: 1, max: 25 }),
+  define("workflow", "resolutionDocumentAllowedFileTypes", [...DEFAULT_RESOLUTION_ATTACHMENT_TYPES], "json", { arrayOptions: [...SUPPORTED_ATTACHMENT_TYPE_KEYS], dynamicOptions: "attachmentTypes" }),
   define("workflow", "autoCloseResolvedGrievances", false, "boolean"),
   define("workflow", "autoCloseAfterDays", 7, "number", { integer: true, min: 1, max: 365 }),
 

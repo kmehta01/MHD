@@ -3,6 +3,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import API from "../services/api";
 import { downloadBlob } from "../utils/download";
+import { buildAttachmentPolicy } from "../utils/attachmentPolicy";
 
 const viewFilters = {
   new: { status: "new" },
@@ -85,6 +86,28 @@ const getFilename = (headers, fallback) => {
   return match?.[1] || fallback;
 };
 
+const portalDateKey = (timeZone) => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
+
+const dueDateExclusionMessage = (value, policy) => {
+  if (!value || !policy) return "";
+  const [year, month, day] = value.split("-").map(Number);
+  const weekday = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  if (policy.countWorkingDaysOnly && (weekday === 0 || weekday === 6)) {
+    return "Select a working day; weekends are excluded by General Settings.";
+  }
+  if (policy.excludePublicHolidays && policy.excludedDates?.includes(value)) {
+    return "Select another day; this date is an active public holiday.";
+  }
+  return "";
+};
+
 const ManageGrievances = () => {
   const { view } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,7 +130,7 @@ const ManageGrievances = () => {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
   const [error, setError] = useState("");
-  const [options, setOptions] = useState({ statuses: [], priorities: [], transitions: [], departments: [], officers: [], formOptions: {}, policy: null });
+  const [options, setOptions] = useState({ statuses: [], priorities: [], transitions: [], departments: [], officers: [], formOptions: {}, capabilities: {}, policy: null });
   const [lifecycle, setLifecycle] = useState(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [assignmentForm, setAssignmentForm] = useState({ departmentId: "", officerId: "", priority: "", note: "" });
@@ -128,6 +151,12 @@ const ManageGrievances = () => {
     loadedComplaint?.id === selectedId ? loadedComplaint : null;
   const statuses = options.statuses.filter((item) => item.is_active);
   const priorities = options.priorities.filter((item) => item.is_active);
+  const resolutionAttachmentPolicy = buildAttachmentPolicy({
+    types: options.capabilities?.attachments?.types,
+    allowedTypeKeys: options.policy?.workflow?.resolutionDocumentAllowedFileTypes,
+    maximumFiles: 1,
+    maximumSizeMb: options.policy?.workflow?.resolutionDocumentMaximumSizeMb || 1,
+  });
   const configuredValueLabels = useMemo(
     () => Object.values(options.formOptions || {}).flat().reduce((labels, item) => {
       labels[item.key] = item.label;
@@ -136,6 +165,17 @@ const ManageGrievances = () => {
     [options.formOptions],
   );
   const displayValue = (value) => formatDisplayValue(value, configuredValueLabels);
+  const duePolicyReady = Boolean(options.policy?.dueDate);
+  const dueDatesEnabled = options.policy?.dueDate?.dueDateRequired !== false;
+  const dueViewUnavailable = Boolean(routeFilter.deadline && duePolicyReady && !dueDatesEnabled);
+  const visibleComplaints = dueViewUnavailable ? [] : complaints;
+  const visiblePagination = dueViewUnavailable
+    ? { page: 1, total: 0, total_pages: 1 }
+    : pagination;
+  const listLoading = dueViewUnavailable ? false : loading;
+  const displayedError = dueViewUnavailable
+    ? "Due-date views are disabled by General Settings."
+    : error;
 
   useEffect(() => {
     let active = true;
@@ -151,7 +191,7 @@ const ManageGrievances = () => {
       ...(effectiveStatus ? { status: effectiveStatus } : {}),
       ...(effectivePriority ? { priority: effectivePriority } : {}),
       ...(routeFilter.assignment ? { assignment: routeFilter.assignment } : {}),
-      ...(routeFilter.deadline ? { deadline: routeFilter.deadline } : {}),
+      ...(routeFilter.deadline && dueDatesEnabled ? { deadline: routeFilter.deadline } : {}),
       page,
       per_page: 10,
     }),
@@ -162,6 +202,7 @@ const ManageGrievances = () => {
       routeFilter.assignment,
       routeFilter.deadline,
       search,
+      dueDatesEnabled,
     ],
   );
 
@@ -179,6 +220,8 @@ const ManageGrievances = () => {
   }, [search, searchInput]);
 
   useEffect(() => {
+    if (routeFilter.deadline && !duePolicyReady) return undefined;
+    if (routeFilter.deadline && !dueDatesEnabled) return undefined;
     let active = true;
 
     API.get("/complaints", { params: queryParams })
@@ -203,7 +246,7 @@ const ManageGrievances = () => {
     return () => {
       active = false;
     };
-  }, [queryParams, requestedComplaintId]);
+  }, [dueDatesEnabled, duePolicyReady, queryParams, requestedComplaintId, routeFilter.deadline]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -354,6 +397,10 @@ const ManageGrievances = () => {
 
   const submitStatus = (event) => {
     event.preventDefault();
+    if (statusDocument && (!resolutionAttachmentPolicy.accepts(statusDocument) || statusDocument.size > resolutionAttachmentPolicy.maximumSizeBytes)) {
+      setError(`Use ${resolutionAttachmentPolicy.allowedLabels.join(", ")} files up to ${resolutionAttachmentPolicy.maximumSizeMb} MB.`);
+      return;
+    }
     const payload = new FormData();
     Object.entries(statusForm).forEach(([key, value]) => payload.append(key, value));
     if (statusDocument) payload.append("attachments", statusDocument);
@@ -374,6 +421,11 @@ const ManageGrievances = () => {
 
   const submitDueDate = (event) => {
     event.preventDefault();
+    const exclusion = dueDateExclusionMessage(dueDateForm.dueAt, options.policy?.dueDate);
+    if (exclusion) {
+      setError(exclusion);
+      return;
+    }
     runAction(
       () => API.post(`/complaints/${selectedId}/due-date`, dueDateForm),
       "Due-date action submitted.",
@@ -453,9 +505,9 @@ const ManageGrievances = () => {
         </div>
       </section>
 
-      {error ? (
+      {displayedError ? (
         <div className="grievance-error" role="alert">
-          {error}
+          {displayedError}
         </div>
       ) : null}
 
@@ -465,7 +517,7 @@ const ManageGrievances = () => {
             <div>
               <h2>Complaint Tickets</h2>
               <p>
-                {pagination.total} ticket{pagination.total === 1 ? "" : "s"}{" "}
+                {visiblePagination.total} ticket{visiblePagination.total === 1 ? "" : "s"}{" "}
                 found
               </p>
             </div>
@@ -486,20 +538,20 @@ const ManageGrievances = () => {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
+                {listLoading ? (
                   <tr>
                     <td className="grievance-status-cell" colSpan="8">
                       Loading grievance tickets...
                     </td>
                   </tr>
-                ) : complaints.length === 0 ? (
+                ) : visibleComplaints.length === 0 ? (
                   <tr>
                     <td className="grievance-status-cell" colSpan="8">
                       No grievance tickets match these filters.
                     </td>
                   </tr>
                 ) : (
-                  complaints.map((complaint) => (
+                  visibleComplaints.map((complaint) => (
                     <tr key={complaint.id}>
                       <td>
                         <button
@@ -554,17 +606,17 @@ const ManageGrievances = () => {
 
           <div className="grievance-pagination">
             <button
-              disabled={loading || page <= 1}
+              disabled={listLoading || page <= 1 || dueViewUnavailable}
               onClick={() => changePage(page - 1)}
               type="button"
             >
               Previous
             </button>
             <span>
-              Page {pagination.page} of {pagination.total_pages}
+              Page {visiblePagination.page} of {visiblePagination.total_pages}
             </span>
             <button
-              disabled={loading || page >= pagination.total_pages}
+              disabled={listLoading || page >= visiblePagination.total_pages || dueViewUnavailable}
               onClick={() => changePage(page + 1)}
               type="button"
             >
@@ -877,14 +929,14 @@ const ManageGrievances = () => {
                     {options.transitions.filter((transition) => transition.is_active && transition.from_status_key === selectedComplaint.statusKey).map((transition) => <option key={transition.id} value={transition.to_status_key}>{transition.to_status}</option>)}
                   </select>
                   <textarea onChange={(event) => setStatusForm((current) => ({ ...current, comment: event.target.value }))} placeholder="Status change comment" required={options.policy?.workflow?.requireCommentOnStatusChange} value={statusForm.comment} />
-                  {options.statuses.find((item) => item.status_key === statusForm.status)?.reporting_group === "resolved" ? <><textarea onChange={(event) => setStatusForm((current) => ({ ...current, resolutionSummary: event.target.value }))} placeholder="Resolution summary" required value={statusForm.resolutionSummary} /><input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx" onChange={(event) => setStatusDocument(event.target.files?.[0] || null)} required={options.policy?.workflow?.requireResolutionDocument} type="file" /></> : null}
+                  {options.statuses.find((item) => item.status_key === statusForm.status)?.reporting_group === "resolved" ? <><textarea onChange={(event) => setStatusForm((current) => ({ ...current, resolutionSummary: event.target.value }))} placeholder="Resolution summary" required value={statusForm.resolutionSummary} /><input accept={resolutionAttachmentPolicy.accept} disabled={!resolutionAttachmentPolicy.allowedTypes.length} onChange={(event) => setStatusDocument(event.target.files?.[0] || null)} required={options.policy?.workflow?.requireResolutionDocument} type="file" /><small>One file, up to {resolutionAttachmentPolicy.maximumSizeMb} MB. {resolutionAttachmentPolicy.allowedLabels.join(", ") || "Attachment configuration unavailable"}.</small></> : null}
                   <button className="button button-primary" disabled={actionBusy || !statusForm.status} type="submit">Update status</button>
                 </form>
 
                 {options.policy?.dueDate?.dueDateRequired ? (
                   <form className="grievance-action-form" onSubmit={submitDueDate}>
                     <strong>Due-date extension</strong>
-                    <input min={new Date().toISOString().slice(0, 10)} onChange={(event) => setDueDateForm((current) => ({ ...current, dueAt: event.target.value }))} required type="date" value={dueDateForm.dueAt} />
+                    <input min={portalDateKey(options.policy?.dueDate?.timeZone || "America/Belize")} onChange={(event) => setDueDateForm((current) => ({ ...current, dueAt: event.target.value }))} required type="date" value={dueDateForm.dueAt} />
                     <textarea onChange={(event) => setDueDateForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Reason for due-date change" required value={dueDateForm.reason} />
                     <button className="button button-secondary" disabled={actionBusy} type="submit">Submit due-date action</button>
                   </form>

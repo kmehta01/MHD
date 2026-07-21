@@ -14,6 +14,7 @@ const SETTINGS_GROUP_CONSUMERS = Object.freeze({
     "frontend/src/components/Layout.jsx", "frontend/src/utils/date-format.js",
     "backend/src/controllers/complaint.controller.js", "backend/src/controllers/dashboard.controller.js",
     "frontend/src/pages/Home.jsx", "backend/src/services/report.service.js",
+    "backend/src/services/due-date.service.js", "backend/src/controllers/public-complaint.controller.js",
   ],
   grievanceSubmission: [
     "backend/src/controllers/public-complaint.controller.js",
@@ -29,11 +30,13 @@ const SETTINGS_GROUP_CONSUMERS = Object.freeze({
   ],
   dueDate: [
     "backend/src/services/due-date.service.js", "backend/src/services/runtime-worker.service.js",
-    "backend/src/controllers/lifecycle.controller.js",
+    "backend/src/controllers/lifecycle.controller.js", "backend/src/controllers/dashboard.controller.js",
+    "backend/src/controllers/complaint.controller.js", "admin-panel/src/pages/ManageGrievances.jsx",
   ],
   workflow: [
     "backend/src/controllers/lifecycle.controller.js", "backend/src/services/runtime-worker.service.js",
-    "backend/src/controllers/public-complaint.controller.js",
+    "backend/src/controllers/public-complaint.controller.js", "backend/src/middlewares/complaint-upload.middleware.js",
+    "admin-panel/src/pages/ManageGrievances.jsx",
   ],
   notifications: [
     "backend/src/services/notification.service.js", "backend/src/services/runtime-worker.service.js",

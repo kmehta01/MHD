@@ -180,6 +180,14 @@ const requestDueDateExtension = async ({ complaintId, requestedDueAt, reason, ac
   return result.insertId;
 };
 
+const findDueDateExtensionRequest = async (requestId) => {
+  const [rows] = await db.query(
+    `SELECT * FROM due_date_extension_requests WHERE id=? LIMIT 1`,
+    [requestId],
+  );
+  return rows[0] || null;
+};
+
 const decideDueDateExtension = async ({ requestId, approved, note, actorId }) =>
   withTransaction(async (connection) => {
     const [requests] = await connection.query(`SELECT * FROM due_date_extension_requests WHERE id=? FOR UPDATE`, [requestId]);
@@ -190,12 +198,18 @@ const decideDueDateExtension = async ({ requestId, approved, note, actorId }) =>
       `UPDATE due_date_extension_requests SET status=?, decided_by=?, decision_note=?, decided_at=NOW() WHERE id=?`,
       [approved ? "approved" : "rejected", actorId, note || null, requestId],
     );
-    if (approved) await connection.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [request.requested_due_at, request.complaint_id]);
+    if (approved) await connection.query(
+      `UPDATE complaints SET due_at=?, overdue_at=NULL, is_escalated=0 WHERE id=?`,
+      [request.requested_due_at, request.complaint_id],
+    );
     return { request, approved };
   });
 
 const updateDueDate = async ({ complaintId, dueAt }) => {
-  const [result] = await db.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [dueAt, complaintId]);
+  const [result] = await db.query(
+    `UPDATE complaints SET due_at=?, overdue_at=NULL, is_escalated=0 WHERE id=?`,
+    [dueAt, complaintId],
+  );
   return result.affectedRows;
 };
 
@@ -238,7 +252,9 @@ const findResolutionDocument = async ({ complaintId, documentId, scope }) => {
 
 const listOpenForDueDateRecalculation = async (limit = 500) => {
   const [rows] = await db.query(
-    `SELECT c.id, c.token_number, c.created_at, c.due_at, s.name AS status, s.status_key FROM complaints c
+    `SELECT c.id, c.token_number, c.created_at, c.office_received_at,
+            COALESCE(c.office_received_at, c.created_at) AS due_start_at,
+            c.due_at, s.name AS status, s.status_key FROM complaints c
      JOIN complaint_statuses s ON s.id=c.status_id WHERE s.reporting_group='open' ORDER BY c.created_at, c.id LIMIT ?`,
     [Math.min(5000, Math.max(1, Number(limit) || 500))],
   );
@@ -247,14 +263,18 @@ const listOpenForDueDateRecalculation = async (limit = 500) => {
 
 const applyDueDateRecalculation = async (updates) => withTransaction(async (connection) => {
   for (const update of updates) {
-    await connection.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [update.dueAt, update.id]);
+    await connection.query(
+      `UPDATE complaints SET due_at=?, overdue_at=NULL, is_escalated=0 WHERE id=?`,
+      [update.dueAt, update.id],
+    );
   }
   return updates.length;
 });
 
 module.exports = {
   addInternalComment, assign, decideDueDateExtension, decideReassignment, findState,
-  applyDueDateRecalculation, findResolutionDocument, findStatus, getLifecycle, listOpenForDueDateRecalculation,
+  applyDueDateRecalculation, findDueDateExtensionRequest, findResolutionDocument, findStatus,
+  getLifecycle, listOpenForDueDateRecalculation,
   requestDueDateExtension, requestReassignment,
   transition, updateDueDate,
 };

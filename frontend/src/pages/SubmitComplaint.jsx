@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import RecaptchaCheckbox from "../components/RecaptchaCheckbox";
 import { formatPortalDateTime } from "../utils/date-format";
 import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
+import { buildAttachmentPolicy } from "../utils/attachmentPolicy";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
@@ -14,17 +15,6 @@ const stepDefinitions = [
   { key: "stepSupporting", caption: "D & E" },
   { key: "stepDeclaration", caption: "F" },
 ];
-
-const fileTypeRegistry = {
-  PDF: { accept: ".pdf", mimeTypes: ["application/pdf"] },
-  DOC: { accept: ".doc", mimeTypes: ["application/msword"] },
-  DOCX: { accept: ".docx", mimeTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] },
-  JPG: { accept: ".jpg", mimeTypes: ["image/jpeg"] },
-  JPEG: { accept: ".jpeg", mimeTypes: ["image/jpeg"] },
-  PNG: { accept: ".png", mimeTypes: ["image/png"] },
-  XLS: { accept: ".xls", mimeTypes: ["application/vnd.ms-excel"] },
-  XLSX: { accept: ".xlsx", mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] },
-};
 
 const getToday = () => {
   const now = new Date();
@@ -166,13 +156,15 @@ function SubmitComplaint() {
   const steps = stepDefinitions.map((step) => ({ title: t(step.key), caption: step.caption }));
 
   const isAnonymous = form.submission_type === "anonymous";
-  const maximumFiles = submissionSettings.allowMultipleAttachments
-    ? submissionSettings.maximumAttachmentCount
-    : 1;
-  const allowedTypes = submissionSettings.allowedFileTypes
-    .filter((type) => fileTypeRegistry[type]);
-  const allowedMimeTypes = allowedTypes.flatMap((type) => fileTypeRegistry[type].mimeTypes);
-  const attachmentAccept = allowedTypes.map((type) => fileTypeRegistry[type].accept).join(",");
+  const attachmentPolicy = buildAttachmentPolicy({
+    types: meta?.capabilities?.attachments?.types,
+    allowedTypeKeys: submissionSettings.allowedFileTypes,
+    maximumFiles: submissionSettings.allowMultipleAttachments ? submissionSettings.maximumAttachmentCount : 1,
+    maximumSizeMb: submissionSettings.maximumAttachmentSizeMb,
+  });
+  const maximumFiles = attachmentPolicy.maximumFiles;
+  const allowedTypes = attachmentPolicy.allowedLabels;
+  const attachmentAccept = attachmentPolicy.accept;
   const captcha = meta?.capabilities?.captcha || {};
   const normalizedFormOptions = normalizeGrievanceFormOptions(catalog.formOptions);
   const toFormChoices = (items = []) => items.map((item) => ({ ...item, value: item.key, note: item.helpText }));
@@ -465,6 +457,9 @@ function SubmitComplaint() {
     }
 
     if (step === 3) {
+      if (!attachmentPolicy.allowedTypes.length) {
+        errors.attachments = "Attachment configuration is unavailable.";
+      }
       if (!form.has_documents) {
         errors.has_documents = "Select Yes or No.";
       }
@@ -473,8 +468,8 @@ function SubmitComplaint() {
       } else {
         const invalidFile = files.find(
           (file) =>
-            !allowedMimeTypes.includes(file.type) ||
-            file.size > submissionSettings.maximumAttachmentSizeMb * 1024 * 1024,
+            !attachmentPolicy.accepts(file) ||
+            file.size > attachmentPolicy.maximumSizeBytes,
         );
         if (invalidFile) {
           errors.attachments =

@@ -6,6 +6,7 @@ const NotificationService = require("./notification.service");
 const LifecycleModel = require("../models/lifecycle.model");
 const ReportService = require("./report.service");
 const AuditLogModel = require("../models/audit-log.model");
+const { createPolicyCalendar } = require("./due-date.service");
 const { unlinkGeneratedUpload } = require("../utils/safe-upload-file");
 
 const owner = crypto.randomUUID();
@@ -28,7 +29,7 @@ const acquireLease = async (leaseKey, seconds = 55) => {
   return rows[0]?.lease_owner === owner;
 };
 
-const dateKey = (value = new Date()) => new Date(value).toISOString().slice(0, 10);
+const dueVersionKey = (value) => String(new Date(value).getTime());
 
 const processNotificationOutbox = async () => {
   if (!await acquireLease("notification-outbox")) return;
@@ -48,54 +49,80 @@ const processDueDates = async (settings, {
   acquire = acquireLease,
   enqueue = NotificationService.enqueueComplaintEvent,
   query = (...args) => db.query(...args),
+  now = new Date(),
+  batchSize = 500,
 } = {}) => {
   if (!settings.dueDate.dueDateRequired || !await acquire("due-date-policy")) return;
-  if (settings.notifications.notifyDueDateReminder) {
-    const [dueSoon] = await query(
-      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
-       WHERE due_at>=NOW() AND due_at<=DATE_ADD(NOW(), INTERVAL ? DAY)
-         AND s.reporting_group='open' LIMIT 500`,
-      [settings.dueDate.dueDateReminderDays],
+  const evaluatedAt = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(evaluatedAt.getTime())) throw new TypeError("Worker evaluation time is invalid");
+  const calendar = await createPolicyCalendar({ settings, executor: { query } });
+  const limit = Math.min(1000, Math.max(1, Number(batchSize) || 500));
+  let cursor = 0;
+
+  while (true) {
+    const [complaints] = await query(
+      `SELECT c.id, c.due_at
+       FROM complaints c
+       JOIN complaint_statuses s ON s.id=c.status_id
+       WHERE c.due_at IS NOT NULL AND s.reporting_group='open' AND c.id>?
+       ORDER BY c.id
+       LIMIT ?`,
+      [cursor, limit],
     );
-    for (const complaint of dueSoon) {
-      await enqueue({
-        eventType: "due_reminder", complaintId: complaint.id,
-        eventKey: `due-reminder:${complaint.id}:${dateKey(complaint.due_at)}`,
-      });
-    }
-  }
-  if (settings.dueDate.automaticallyMarkOverdue) {
-    const [overdue] = await query(
-      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id WHERE c.due_at<NOW() AND s.reporting_group='open' LIMIT 500`,
-    );
-    for (const complaint of overdue) {
-      await query(`UPDATE complaints SET overdue_at=COALESCE(overdue_at, NOW()) WHERE id=?`, [complaint.id]);
-      await enqueue({
-        eventType: "overdue", complaintId: complaint.id,
-        eventKey: `overdue:${complaint.id}:${dateKey(complaint.due_at)}`,
-      });
-    }
-  }
-  if (settings.dueDate.enableEscalation) {
-    const [overdue] = await query(
-      `SELECT c.id, c.due_at FROM complaints c JOIN complaint_statuses s ON s.id=c.status_id
-       WHERE c.due_at<DATE_SUB(NOW(), INTERVAL ? DAY) AND s.reporting_group='open' LIMIT 500`,
-      [settings.dueDate.escalateAfterDays],
-    );
-    for (const complaint of overdue) {
-      const escalationKey = `due:${dateKey(complaint.due_at)}:${settings.dueDate.escalateAfterDays}`;
-      const [result] = await query(
-        `INSERT IGNORE INTO complaint_escalations (complaint_id, escalation_key) VALUES (?, ?)`,
-        [complaint.id, escalationKey],
-      );
-      if (result.affectedRows) {
-        await query(`UPDATE complaints SET is_escalated=1 WHERE id=?`, [complaint.id]);
-        await enqueue({
-          eventType: "overdue", complaintId: complaint.id,
-          eventKey: `escalation:${complaint.id}:${escalationKey}`,
-        });
+    if (!complaints.length) break;
+
+    for (const complaint of complaints) {
+      const dueAt = new Date(complaint.due_at);
+      if (Number.isNaN(dueAt.getTime())) continue;
+      const version = dueVersionKey(dueAt);
+
+      if (settings.notifications.notifyDueDateReminder && evaluatedAt < dueAt) {
+        const reminderAt = calendar.calculateReminderAt(dueAt);
+        if (evaluatedAt >= reminderAt) {
+          await enqueue({
+            eventType: "due_reminder", complaintId: complaint.id,
+            eventKey: `due-reminder:${complaint.id}:${version}`,
+          });
+        }
+      }
+
+      if (settings.dueDate.automaticallyMarkOverdue && evaluatedAt > dueAt) {
+        await query(
+          `UPDATE complaints SET overdue_at=COALESCE(overdue_at, ?) WHERE id=?`,
+          [evaluatedAt, complaint.id],
+        );
+        if (settings.notifications.notifyOverdueGrievance) {
+          await enqueue({
+            eventType: "overdue", complaintId: complaint.id,
+            eventKey: `overdue:${complaint.id}:${version}`,
+          });
+        }
+      }
+
+      if (settings.dueDate.enableEscalation) {
+        const escalationAt = calendar.calculateEscalationAt(dueAt);
+        if (evaluatedAt >= escalationAt) {
+          const escalationKey = `due:${version}:${settings.dueDate.escalateAfterDays}`;
+          const [result] = await query(
+            `INSERT IGNORE INTO complaint_escalations (complaint_id, escalation_key) VALUES (?, ?)`,
+            [complaint.id, escalationKey],
+          );
+          if (result.affectedRows) {
+            await query(`UPDATE complaints SET is_escalated=1 WHERE id=?`, [complaint.id]);
+            if (settings.notifications.notifyOverdueGrievance) {
+              await enqueue({
+                eventType: "overdue", complaintId: complaint.id,
+                eventKey: `escalation:${complaint.id}:${escalationKey}`,
+              });
+            }
+          }
+        }
       }
     }
+
+    const nextCursor = Number(complaints[complaints.length - 1].id);
+    if (complaints.length < limit || nextCursor <= cursor) break;
+    cursor = nextCursor;
   }
 };
 

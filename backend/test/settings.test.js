@@ -126,6 +126,19 @@ test("General Settings rejects unsafe and unknown fields", async (t) => {
   assert.ok(res.body.errors["organization.unknownSetting"]);
 });
 
+test("General Settings rejects unsupported and empty attachment policies", async (t) => {
+  t.mock.method(SettingsService, "getGeneralSettings", async () => clone(generalSettingsDefaults));
+  const req = { body: { settings: {
+    grievanceSubmission: { allowedFileTypes: ["PDF", "EXE"] },
+    workflow: { resolutionDocumentAllowedFileTypes: [] },
+  } } };
+  const res = createResponse();
+  await validateGeneralSettingsPayload(req, res, () => {});
+  assert.equal(res.statusCode, 422);
+  assert.ok(res.body.errors["grievanceSubmission.allowedFileTypes"]);
+  assert.ok(res.body.errors["workflow.resolutionDocumentAllowedFileTypes"]);
+});
+
 test("General Settings reset requires exact confirmation and a reason", () => {
   const invalidReq = { body: { confirmation: "RESET", reason: "no" } };
   const invalidRes = createResponse();
@@ -146,8 +159,8 @@ test("General Settings reset requires exact confirmation and a reason", () => {
   assert.equal(continued, true);
 });
 
-test("all 132 authoritative defaults satisfy their field definitions", () => {
-  assert.equal(generalSettingDefinitions.length, 132);
+test("all 134 authoritative defaults satisfy their field definitions", () => {
+  assert.equal(generalSettingDefinitions.length, 134);
   for (const definition of generalSettingDefinitions) {
     const result = validateValue(definition, definition.defaultValue);
     assert.equal(result.error, undefined, `${definition.settingKey}: ${result.error}`);

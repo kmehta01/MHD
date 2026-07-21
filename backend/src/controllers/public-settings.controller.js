@@ -1,5 +1,6 @@
 const SettingsPolicy = require("../services/settings-policy.service");
 const packageMetadata = require("../../package.json");
+const { publicAttachmentTypes } = require("../config/attachment-types");
 
 const getPublicSettings = async (_req, res) => {
   try {
@@ -21,6 +22,7 @@ const getPublicSettings = async (_req, res) => {
             provider: runtimeCapabilities.captcha.provider,
           },
           email: runtimeCapabilities.email,
+          attachments: { types: publicAttachmentTypes() },
         },
       },
     });

@@ -16,6 +16,8 @@ const migrations = [
   ["20260720-operational-runtime", "apply-operational-runtime-migration.js"],
   ["20260721-master-data", "apply-master-data-migration.js"],
   ["20260722-grievance-form-options", "apply-grievance-form-options-migration.js"],
+  ["20260723-attachment-policy", "apply-attachment-policy-migration.js"],
+  ["20260724-due-date-policy", "apply-due-date-policy-migration.js"],
 ];
 const requiredRuntimeTables = [
   "admin_audit_logs", "admin_auth_events", "admin_sessions",
@@ -74,7 +76,9 @@ const run = async () => {
         (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
           WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='complaints'
             AND CONSTRAINT_NAME IN ('fk_complaints_status','fk_complaints_priority','fk_complaints_category',
-              'fk_complaints_location','fk_complaints_submitted_department','fk_complaints_assigned_department')) AS master_foreign_keys
+              'fk_complaints_location','fk_complaints_submitted_department','fk_complaints_assigned_department')) AS master_foreign_keys,
+        (SELECT COUNT(*) FROM system_settings WHERE setting_key IN
+          ('workflow.resolutionDocumentMaximumSizeMb','workflow.resolutionDocumentAllowedFileTypes')) AS attachment_policy_settings
     `);
     const [runtimeTables] = await connection.query(
       `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?)`,
@@ -82,7 +86,8 @@ const run = async () => {
     );
     const presentTables = new Set(runtimeTables.map((row) => row.TABLE_NAME));
     const missingTables = requiredRuntimeTables.filter((table) => !presentTables.has(table));
-    if (missingTables.length || Number(health.missing_department_codes) || Number(health.complaints_missing_master_ids) || Number(health.master_foreign_keys) !== 6) {
+    if (missingTables.length || Number(health.missing_department_codes) || Number(health.complaints_missing_master_ids) ||
+        Number(health.master_foreign_keys) !== 6 || Number(health.attachment_policy_settings) !== 2) {
       health.missing_runtime_tables = missingTables;
       throw new Error(`Post-migration database validation failed: ${JSON.stringify(health)}`);
     }

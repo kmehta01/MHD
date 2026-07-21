@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { buildComplaintToken } = require("../src/models/complaint.model");
+const { buildComplaintToken, createWithAttachments } = require("../src/models/complaint.model");
 
 test("builds complaint token using GRM year month and sequence", () => {
   const token = buildComplaintToken({
@@ -19,4 +19,11 @@ test("pads complaint sequences to at least four digits", () => {
   });
 
   assert.equal(token, "GRM-2026-06-0042");
+});
+
+test("complaint creation requires the current runtime settings policy", async () => {
+  await assert.rejects(
+    createWithAttachments({ complaint: {}, attachments: [] }),
+    /Runtime General Settings are required/,
+  );
 });

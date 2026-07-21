@@ -5,7 +5,7 @@ const SettingsPolicy = require("../services/settings-policy.service");
 const { getGrievanceScope, hasPermission } = require("../utils/access-scope");
 const { recordAuditEvent } = require("../services/audit-log.service");
 const NotificationService = require("../services/notification.service");
-const { calculateDueAt } = require("../services/due-date.service");
+const { createPolicyCalendar, parsePortalDateTime } = require("../services/due-date.service");
 const { removeUploadedFiles } = require("../middlewares/complaint-upload.middleware");
 
 const backendRoot = path.resolve(__dirname, "../..");
@@ -135,10 +135,14 @@ const changeStatus = async (req, res) => {
       originalName: file.originalname, storedName: file.filename, mimeType: file.mimetype,
       fileSize: file.size, storagePath: path.relative(backendRoot, file.path).replace(/\\/g, "/"),
     }));
-    if (normalized === "resolved" && settings.workflow.requireResolutionDocument && !attachments.length) {
+    const isResolution = targetStatus.reporting_group === "resolved";
+    if (!isResolution && attachments.length) {
+      throw error("Resolution documents can only be uploaded with a resolved status");
+    }
+    if (isResolution && settings.workflow.requireResolutionDocument && !attachments.length) {
       throw error("A resolution document is required");
     }
-    const resolutionSummary = normalized === "resolved"
+    const resolutionSummary = isResolution
       ? text(req.body.resolutionSummary, "Resolution summary", { required: true, max: 10000 })
       : null;
     const result = await LifecycleModel.transition({ complaintId, toStatusRef: target, comment, actorId: req.user.id, resolutionSummary, attachments });
@@ -165,11 +169,20 @@ const requestDueDate = async (req, res) => {
     const { complaintId } = await ensureAccess(req);
     const settings = await SettingsPolicy.getPolicy();
     if (!settings.dueDate.dueDateRequired) throw error("Due dates are disabled by General Settings", 403);
-    const dueAt = new Date(req.body.dueAt);
-    if (Number.isNaN(dueAt.getTime()) || dueAt <= new Date()) throw error("The requested due date must be a valid future date");
+    if (req.user.role_slug !== "super-admin" && !settings.dueDate.allowDepartmentChangeDueDate) {
+      throw error("Department due-date changes are disabled by General Settings", 403);
+    }
+    let dueAt;
+    try { dueAt = parsePortalDateTime(req.body.dueAt, settings.portal.timeZone); }
+    catch { throw error("The requested due date must be valid in the portal timezone"); }
+    if (dueAt <= new Date()) throw error("The requested due date must be a valid future date");
+    const calendar = await createPolicyCalendar({ settings });
+    if (!calendar.isEligibleDate(dueAt)) {
+      throw error("The requested due date falls on an excluded weekend or public holiday");
+    }
     const reason = text(req.body.reason, "Due-date reason", { required: true });
     const canDirect = req.user.role_slug === "super-admin" ||
-      (settings.dueDate.allowDepartmentChangeDueDate && !settings.dueDate.adminApprovalDueDateExtension);
+      !settings.dueDate.adminApprovalDueDateExtension;
     if (canDirect) {
       await LifecycleModel.updateDueDate({ complaintId, dueAt });
       await audit(req, "GRIEVANCE_DUE_DATE_CHANGED", complaintId);
@@ -182,9 +195,23 @@ const requestDueDate = async (req, res) => {
 
 const decideDueDate = async (req, res) => {
   try {
+    const requestId = id(req.params.requestId, "request ID");
+    const approved = req.body.approved === true;
+    if (approved) {
+      const [settings, pending] = await Promise.all([
+        SettingsPolicy.getPolicy(), LifecycleModel.findDueDateExtensionRequest(requestId),
+      ]);
+      if (!pending) throw error("Due-date request not found", 404);
+      if (!settings.dueDate.dueDateRequired) throw error("Due dates are disabled by General Settings", 403);
+      const requestedDueAt = new Date(pending.requested_due_at);
+      const calendar = await createPolicyCalendar({ settings });
+      if (requestedDueAt <= new Date() || !calendar.isEligibleDate(requestedDueAt)) {
+        throw error("The requested due date is no longer an eligible future date", 409);
+      }
+    }
     const result = await LifecycleModel.decideDueDateExtension({
-      requestId: id(req.params.requestId, "request ID"), approved: req.body.approved === true,
-      note: text(req.body.note, "Decision note", { required: req.body.approved !== true }), actorId: req.user.id,
+      requestId, approved,
+      note: text(req.body.note, "Decision note", { required: !approved }), actorId: req.user.id,
     });
     if (!result) throw error("Due-date request not found", 404);
     await audit(req, "GRIEVANCE_DUE_DATE_CHANGED", result.request.complaint_id);
@@ -194,20 +221,45 @@ const decideDueDate = async (req, res) => {
 
 const buildDueDatePreview = async (settings, limit) => {
   const complaints = await LifecycleModel.listOpenForDueDateRecalculation(limit);
-  return Promise.all(complaints.map(async (complaint) => ({
-    id: complaint.id,
-    tokenNumber: complaint.token_number,
-    status: complaint.status,
-    currentDueAt: complaint.due_at,
-    proposedDueAt: await calculateDueAt({ startDate: complaint.created_at, settings }),
-  })));
+  const calendar = await createPolicyCalendar({ settings });
+  return complaints.map((complaint) => {
+    const proposedDueAt = calendar.calculateDueAt(complaint.due_start_at);
+    const currentTime = complaint.due_at ? new Date(complaint.due_at).getTime() : null;
+    const proposedTime = proposedDueAt ? proposedDueAt.getTime() : null;
+    return {
+      id: complaint.id,
+      tokenNumber: complaint.token_number,
+      status: complaint.status,
+      startAt: complaint.due_start_at,
+      currentDueAt: complaint.due_at,
+      proposedDueAt,
+      changed: currentTime !== proposedTime,
+      differenceMilliseconds: currentTime === null || proposedTime === null
+        ? null : proposedTime - currentTime,
+    };
+  });
 };
+
+const dueDatePolicyMetadata = (settings) => ({
+  enabled: settings.dueDate.dueDateRequired,
+  resolutionDays: settings.dueDate.defaultResolutionDays,
+  mode: settings.dueDate.countWorkingDaysOnly ? "working_days" : "calendar_days",
+  excludePublicHolidays: settings.dueDate.excludePublicHolidays,
+  timeZone: settings.portal.timeZone,
+  reminderDays: settings.dueDate.dueDateReminderDays,
+  escalationEnabled: settings.dueDate.enableEscalation,
+  escalationDays: settings.dueDate.escalateAfterDays,
+});
 
 const previewDueDateRecalculation = async (req, res) => {
   try {
     const settings = await SettingsPolicy.getPolicy();
     const data = await buildDueDatePreview(settings, req.query.limit);
-    return res.json({ status: true, data, meta: { count: data.length, previewOnly: true } });
+    return res.json({
+      status: true,
+      data,
+      meta: { count: data.length, previewOnly: true, policy: dueDatePolicyMetadata(settings) },
+    });
   } catch (caught) { return sendError(res, caught, "Failed to preview due-date recalculation"); }
 };
 

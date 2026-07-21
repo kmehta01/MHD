@@ -409,6 +409,18 @@ const seedGeneralSettings = async (connection) => {
   }
 };
 
+const validateAttachmentPolicyInstallation = async (connection) => {
+  const [[health]] = await connection.query(
+    `SELECT COUNT(*) AS configured
+       FROM system_settings
+      WHERE setting_key IN
+        ('workflow.resolutionDocumentMaximumSizeMb','workflow.resolutionDocumentAllowedFileTypes')`,
+  );
+  if (Number(health.configured) !== 2) {
+    throw new InstallerError("Resolution attachment policy settings were not installed", 500);
+  }
+};
+
 const writeEnvironmentFiles = (config) => {
   const backendEnv = buildEnv({
     APP_NAME: "MHD_BELIZE_WEBSITE",
@@ -438,7 +450,6 @@ const writeEnvironmentFiles = (config) => {
     PII_ENCRYPTION_KEY: config.pii_encryption_key,
     COMPLAINT_TOKEN_PREFIX: config.complaint_token_prefix.toUpperCase(),
     COMPLAINT_TOKEN_RANDOM_LENGTH: config.complaint_token_random_length,
-    DEFAULT_GRIEVANCE_DUE_DAYS: 10,
     INSTALLATION_STATUS: true,
   });
 
@@ -485,6 +496,7 @@ const runInstaller = async (input = {}) => {
     await runSchema(connection);
     await createSuperAdmin(connection, config);
     await seedGeneralSettings(connection);
+    await validateAttachmentPolicyInstallation(connection);
     writeEnvironmentFiles(config);
     createInstallLock();
 

@@ -169,6 +169,12 @@ const buildDashboardPayload = ({ user, result, scope, workflow = { statuses: [],
     })),
   };
 
+  if (!settings.dueDate.dueDateRequired) {
+    delete overviewWidgets.overdue;
+    delete overviewWidgets.due_today;
+    delete chartWidgets.overdue_by_department;
+  }
+
   return {
     overview: filterPermittedWidgets(
       user,
@@ -189,8 +195,18 @@ const buildDashboardPayload = ({ user, result, scope, workflow = { statuses: [],
       date_format: settings.portal.dateFormat,
       time_format: settings.portal.timeFormat,
       due_date_rule: settings.dueDate.dueDateRequired
-        ? `${settings.dueDate.defaultResolutionDays} ${settings.dueDate.countWorkingDaysOnly ? "working" : "calendar"} days from submission`
+        ? `${settings.dueDate.defaultResolutionDays} ${settings.dueDate.countWorkingDaysOnly ? "working" : "calendar"} days from the applicable intake start${settings.dueDate.excludePublicHolidays ? ", excluding public holidays" : ""}`
         : "No automatic due date",
+      due_date_policy: {
+        enabled: settings.dueDate.dueDateRequired,
+        resolution_days: settings.dueDate.defaultResolutionDays,
+        day_mode: settings.dueDate.countWorkingDaysOnly ? "working_days" : "calendar_days",
+        exclude_public_holidays: settings.dueDate.excludePublicHolidays,
+        time_zone: settings.portal.timeZone,
+        reminder_days: settings.dueDate.dueDateReminderDays,
+        escalation_enabled: settings.dueDate.enableEscalation,
+        escalation_days: settings.dueDate.escalateAfterDays,
+      },
       resolution_definition:
         "Resolved or closed grievances with a recorded resolution timestamp",
     },

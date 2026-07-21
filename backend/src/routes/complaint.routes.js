@@ -13,6 +13,7 @@ const {
 } = require("../controllers/public-complaint.controller");
 const {
   handleComplaintUpload,
+  handleResolutionDocumentUpload,
 } = require("../middlewares/complaint-upload.middleware");
 const {
   adminComplaintSubmissionLimiter,
@@ -46,7 +47,7 @@ router.post(
 router.get("/:id/lifecycle", lifecycle.getLifecycle);
 router.post("/:id/assignment", checkAnyPermission(["grievances.assign", "grievances.reassign"]), lifecycle.assignComplaint);
 router.post("/:id/reassignment", checkAnyPermission(["grievances.request_reassignment", "grievances.reassign"]), lifecycle.reassignComplaint);
-router.post("/:id/status", checkAnyPermission(["grievances.update_status", "grievances.submit_resolution", "grievances.approve_resolution", "grievances.close"]), handleComplaintUpload, lifecycle.changeStatus);
+router.post("/:id/status", checkAnyPermission(["grievances.update_status", "grievances.submit_resolution", "grievances.approve_resolution", "grievances.close"]), handleResolutionDocumentUpload, lifecycle.changeStatus);
 router.post("/:id/comments", checkAnyPermission(["grievances.add_notes", "grievances.update_status"]), lifecycle.addComment);
 router.post("/:id/due-date", checkPermission("grievances.extend_due_date"), lifecycle.requestDueDate);
 router.get("/:id/resolution-documents/:documentId/download", complaintAttachmentDownloadLimiter, lifecycle.downloadResolutionDocument);

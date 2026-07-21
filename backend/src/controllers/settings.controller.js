@@ -2,6 +2,7 @@ const SettingsModel = require("../models/settings.model");
 const SettingsService = require("../services/settings.service");
 const SettingsPolicy = require("../services/settings-policy.service");
 const ConfigurationModel = require("../models/configuration.model");
+const { publicAttachmentTypes } = require("../config/attachment-types");
 const {
   removeSettingsFile,
   removeStoredSettingsFile,
@@ -37,6 +38,7 @@ const buildResponseMeta = async (user, updateMeta = null, knownVersion = null) =
     master_options: {
       statuses: workflow.statuses.filter((item) => item.is_active).map((item) => ({ value: item.status_key, label: item.name })),
       priorities: workflow.priorities.filter((item) => item.is_active).map((item) => ({ value: item.priority_key, label: item.name })),
+      attachmentTypes: publicAttachmentTypes().map((item) => ({ value: item.key, label: item.label })),
     },
     last_updated_at: updateMeta?.updated_at || null, last_updated_by: updateMeta?.updated_by_name || null,
     version: knownVersion ?? await SettingsService.getGeneralSettingsVersion(),

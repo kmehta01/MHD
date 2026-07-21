@@ -4,7 +4,13 @@ const { getGrievanceScope, hasPermission } = require("../utils/access-scope");
 const ConfigurationModel = require("../models/configuration.model");
 const { decryptText, maskPhoneNumber } = require("../services/pii.service");
 const SettingsPolicy = require("../services/settings-policy.service");
-const { getZonedParts, zonedPartsToDate } = require("../services/due-date.service");
+const { publicAttachmentTypes } = require("../config/attachment-types");
+const {
+  addPlainDays,
+  getZonedParts,
+  normalizeHolidayKey,
+  zonedPartsToDate,
+} = require("../services/due-date.service");
 const {
   getOptionalInteger,
   getOptionalString,
@@ -153,7 +159,12 @@ const normalizeComplaintDetail = (complaint, privacy = {}, revealPii = false) =>
   })),
 });
 
-const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [], priorities: [] }) => {
+const getFilters = (
+  query,
+  timeZone = "America/Belize",
+  workflow = { statuses: [], priorities: [] },
+  dueDatesEnabled = true,
+) => {
   const search = getOptionalString(query, "search", { maxLength: 100 });
   const status = getOptionalString(query, "status", { maxLength: 40 });
   const priority = getOptionalString(query, "priority", { maxLength: 20 });
@@ -187,6 +198,11 @@ const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [
     error.statusCode = 400;
     throw error;
   }
+  if (deadline && !dueDatesEnabled) {
+    const error = new Error("Due-date filters are disabled by General Settings");
+    error.statusCode = 409;
+    throw error;
+  }
 
   const parts = getZonedParts(new Date(), timeZone);
   const todayStart = zonedPartsToDate({ ...parts, hour: 0, minute: 0, second: 0 }, timeZone);
@@ -198,7 +214,10 @@ const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [
     status: statusRecord?.id || null,
     priority: priorityRecord?.id || null,
     todayStart,
-    tomorrowStart: new Date(todayStart.getTime() + 24 * 60 * 60 * 1000),
+    tomorrowStart: zonedPartsToDate(
+      { ...addPlainDays(parts, 1), hour: 0, minute: 0, second: 0 },
+      timeZone,
+    ),
   };
 };
 
@@ -214,7 +233,12 @@ const getComplaints = async (req, res) => {
       });
     }
 
-    const result = await ComplaintModel.findAll(getFilters(req.query, settings.portal.timeZone, workflow), {
+    const result = await ComplaintModel.findAll(getFilters(
+      req.query,
+      settings.portal.timeZone,
+      workflow,
+      settings.dueDate.dueDateRequired,
+    ), {
       page: getOptionalInteger(req.query, "page", { defaultValue: 1 }),
       perPage: getOptionalInteger(req.query, "per_page", {
         defaultValue: settings.portal.recordsPerPage,
@@ -329,10 +353,11 @@ const getComplaintById = async (req, res) => {
 
 const getComplaintOptions = async (_req, res) => {
   try {
-    const [workflow, settings, catalog, officers, formOptions] = await Promise.all([
+    const [workflow, settings, catalog, officers, formOptions, holidays] = await Promise.all([
       ConfigurationModel.listWorkflow(), SettingsPolicy.getPolicy(),
       ConfigurationModel.listPublicCatalog(), ConfigurationModel.listAssignableOfficers(),
       ConfigurationModel.listFormOptions(),
+      ConfigurationModel.listHolidays(),
     ]);
     return res.json({
       status: true,
@@ -344,8 +369,21 @@ const getComplaintOptions = async (_req, res) => {
         categories: catalog.categories,
         locations: catalog.locations,
         formOptions,
+        capabilities: { attachments: { types: publicAttachmentTypes() } },
         officers,
-        policy: { assignment: settings.assignment, dueDate: settings.dueDate, workflow: settings.workflow, privacy: { allowAttachmentDownload: settings.privacy.allowAttachmentDownload } },
+        policy: {
+          assignment: settings.assignment,
+          dueDate: {
+            ...settings.dueDate,
+            timeZone: settings.portal.timeZone,
+            excludedDates: holidays
+              .filter((item) => item.is_active)
+              .map((item) => normalizeHolidayKey(item.holiday_date))
+              .filter(Boolean),
+          },
+          workflow: settings.workflow,
+          privacy: { allowAttachmentDownload: settings.privacy.allowAttachmentDownload },
+        },
       },
     });
   } catch (error) { return res.status(500).json({ status: false, message: "Failed to load grievance workflow options" }); }

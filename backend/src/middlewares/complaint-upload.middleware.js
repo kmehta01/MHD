@@ -3,30 +3,18 @@ const path = require("path");
 const multer = require("multer");
 const SettingsPolicy = require("../services/settings-policy.service");
 const {
+  ATTACHMENT_TYPES,
+  COMPLAINT_FILENAME_PATTERN,
+  hasMatchingSignature,
+  resolveAttachmentType,
+} = require("../config/attachment-types");
+const {
   readGeneratedUpload,
   unlinkGeneratedUpload,
 } = require("../utils/safe-upload-file");
 
 const uploadRoot = path.resolve(__dirname, "../../uploads/complaints");
 fs.mkdirSync(uploadRoot, { recursive: true });
-const COMPLAINT_FILENAME_PATTERN = /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png|xls|xlsx)$/;
-
-const FILE_TYPE_REGISTRY = Object.freeze({
-  PDF: { extensions: [".pdf"], mimeTypes: ["application/pdf"] },
-  DOC: { extensions: [".doc"], mimeTypes: ["application/msword"] },
-  DOCX: {
-    extensions: [".docx"],
-    mimeTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
-  },
-  JPG: { extensions: [".jpg"], mimeTypes: ["image/jpeg"] },
-  JPEG: { extensions: [".jpeg"], mimeTypes: ["image/jpeg"] },
-  PNG: { extensions: [".png"], mimeTypes: ["image/png"] },
-  XLS: { extensions: [".xls"], mimeTypes: ["application/vnd.ms-excel"] },
-  XLSX: {
-    extensions: [".xlsx"],
-    mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
-  },
-});
 
 const storage = multer.diskStorage({
   destination: (_req, _file, callback) => callback(null, uploadRoot),
@@ -36,85 +24,84 @@ const storage = multer.diskStorage({
   },
 });
 
-const getUploadPolicy = (settings) => {
+const normalizeAllowedTypes = (types) => Array.isArray(types)
+  ? [...new Set(types.filter((type) => typeof type === "string" && ATTACHMENT_TYPES[type]))]
+  : [];
+
+const getComplaintUploadPolicy = (settings) => {
   const source = settings.grievanceSubmission;
-  const requestedTypes = source.allowedFileTypes.filter((type) => FILE_TYPE_REGISTRY[type]);
-  const maximumFiles = source.allowMultipleAttachments
-    ? source.maximumAttachmentCount
-    : 1;
   return {
-    allowedTypes: requestedTypes,
-    maximumFiles,
+    allowedTypes: normalizeAllowedTypes(source.allowedFileTypes),
+    maximumFiles: source.allowMultipleAttachments ? source.maximumAttachmentCount : 1,
     maximumSizeBytes: source.maximumAttachmentSizeMb * 1024 * 1024,
+    maximumSizeMb: source.maximumAttachmentSizeMb,
+    documentLabel: "supporting document",
   };
 };
 
-const acceptsFile = (file, allowedTypes) => {
-  const extension = path.extname(file.originalname || "").toLowerCase();
-  return allowedTypes.some((type) => {
-    const rule = FILE_TYPE_REGISTRY[type];
-    return rule.extensions.includes(extension) && rule.mimeTypes.includes(file.mimetype);
-  });
-};
+const getResolutionUploadPolicy = (settings) => ({
+  allowedTypes: normalizeAllowedTypes(settings.workflow.resolutionDocumentAllowedFileTypes),
+  maximumFiles: 1,
+  maximumSizeBytes: settings.workflow.resolutionDocumentMaximumSizeMb * 1024 * 1024,
+  maximumSizeMb: settings.workflow.resolutionDocumentMaximumSizeMb,
+  documentLabel: "resolution document",
+});
+
+const acceptsFile = (file, allowedTypes) => Boolean(resolveAttachmentType(file, allowedTypes));
 
 const removeUploadedFiles = async (files = []) => {
   await Promise.all(files.map((file) =>
     unlinkGeneratedUpload(uploadRoot, file, COMPLAINT_FILENAME_PATTERN).catch(() => false)));
 };
 
-const hasValidSignature = async (file) => {
+const hasValidSignature = async (file, policy) => {
+  const typeKey = resolveAttachmentType(file, policy.allowedTypes);
+  if (!typeKey) return false;
   const bytes = await readGeneratedUpload({
     uploadRoot,
     fileOrFilename: file,
     filenamePattern: COMPLAINT_FILENAME_PATTERN,
-    maximumBytes: 25 * 1024 * 1024,
+    maximumBytes: policy.maximumSizeBytes,
     bytesToRead: 16,
   });
-  if (file.mimetype === "application/pdf") return bytes.subarray(0, 5).toString("ascii") === "%PDF-";
-  if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-  if (file.mimetype === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  if (["application/msword", "application/vnd.ms-excel"].includes(file.mimetype)) return bytes.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
-  if (file.mimetype.includes("openxmlformats-officedocument")) return bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
-  return false;
+  return hasMatchingSignature(typeKey, bytes);
 };
 
-const handleComplaintUpload = async (req, res, next) => {
+const createAttachmentUploadHandler = (getPolicy) => async (req, res, next) => {
   try {
     const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
     req.generalSettings = settings;
-    const policy = getUploadPolicy(settings);
+    const policy = getPolicy(settings);
     const upload = multer({
       storage,
-      limits: {
-        fileSize: policy.maximumSizeBytes,
-        files: policy.maximumFiles,
-      },
+      limits: { fileSize: policy.maximumSizeBytes, files: policy.maximumFiles },
       fileFilter: (_request, file, callback) => {
-        if (acceptsFile(file, policy.allowedTypes)) {
-          callback(null, true);
-          return;
-        }
-        callback(new Error(`Only ${policy.allowedTypes.join(", ")} files can be uploaded`));
+        if (acceptsFile(file, policy.allowedTypes)) return callback(null, true);
+        const allowed = policy.allowedTypes.length ? policy.allowedTypes.join(", ") : "no configured";
+        return callback(new Error(`Only ${allowed} files can be uploaded`));
       },
     });
 
-    upload.array("attachments", policy.maximumFiles)(req, res, async (error) => {
-      if (!error) {
-        const signatures = await Promise.all((req.files || []).map(hasValidSignature)).catch(() => []);
+    upload.array("attachments", policy.maximumFiles)(req, res, async (uploadError) => {
+      if (!uploadError) {
+        const signatures = await Promise.all(
+          (req.files || []).map((file) => hasValidSignature(file, policy)),
+        ).catch(() => []);
         if (signatures.length === (req.files || []).length && signatures.every(Boolean)) {
           next();
           return;
         }
         await removeUploadedFiles(req.files || []);
-        res.status(400).json({ status: false, message: "One or more supporting documents have invalid file contents" });
+        res.status(400).json({ status: false, message: `One or more ${policy.documentLabel}s have invalid file contents` });
         return;
       }
+
       await removeUploadedFiles(req.files || []);
-      const message = error.code === "LIMIT_FILE_SIZE"
-        ? `Each supporting document must be ${settings.grievanceSubmission.maximumAttachmentSizeMb} MB or smaller`
-        : error.code === "LIMIT_FILE_COUNT"
-          ? `A maximum of ${policy.maximumFiles} supporting document${policy.maximumFiles === 1 ? "" : "s"} can be uploaded`
-          : error.message || "Supporting document upload failed";
+      const message = uploadError.code === "LIMIT_FILE_SIZE"
+        ? `Each ${policy.documentLabel} must be ${policy.maximumSizeMb} MB or smaller`
+        : uploadError.code === "LIMIT_FILE_COUNT"
+          ? `A maximum of ${policy.maximumFiles} ${policy.documentLabel}${policy.maximumFiles === 1 ? "" : "s"} can be uploaded`
+          : uploadError.message || `${policy.documentLabel} upload failed`;
       res.status(400).json({ status: false, message });
     });
   } catch (error) {
@@ -122,11 +109,17 @@ const handleComplaintUpload = async (req, res, next) => {
   }
 };
 
+const handleComplaintUpload = createAttachmentUploadHandler(getComplaintUploadPolicy);
+const handleResolutionDocumentUpload = createAttachmentUploadHandler(getResolutionUploadPolicy);
+
 module.exports = {
-  FILE_TYPE_REGISTRY,
   COMPLAINT_FILENAME_PATTERN,
-  getUploadPolicy,
+  acceptsFile,
+  createAttachmentUploadHandler,
+  getComplaintUploadPolicy,
+  getResolutionUploadPolicy,
   handleComplaintUpload,
+  handleResolutionDocumentUpload,
   hasValidSignature,
   removeUploadedFiles,
   uploadRoot,

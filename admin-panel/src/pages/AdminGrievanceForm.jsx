@@ -4,6 +4,7 @@ import QRCode from "qrcode";
 import Icon from "../components/Icon";
 import API from "../services/api";
 import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
+import { buildAttachmentPolicy } from "../utils/attachmentPolicy";
 
 const today = () => {
   const date = new Date();
@@ -79,17 +80,6 @@ const initialForm = (receivedBy = "") => ({
   office_assigned_to: "",
 });
 
-const fileTypeRegistry = {
-  PDF: { accept: ".pdf", mime: ["application/pdf"] },
-  DOC: { accept: ".doc", mime: ["application/msword"] },
-  DOCX: { accept: ".docx", mime: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] },
-  JPG: { accept: ".jpg", mime: ["image/jpeg"] },
-  JPEG: { accept: ".jpeg", mime: ["image/jpeg"] },
-  PNG: { accept: ".png", mime: ["image/png"] },
-  XLS: { accept: ".xls", mime: ["application/vnd.ms-excel"] },
-  XLSX: { accept: ".xlsx", mime: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] },
-};
-
 const steps = [
   ["Complainant", "Submission and contact information"],
   ["Grievance", "Issue and incident details"],
@@ -109,16 +99,20 @@ const AdminGrievanceForm = () => {
   const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
   const [policy, setPolicy] = useState(null);
+  const [attachmentTypes, setAttachmentTypes] = useState([]);
   const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [], formOptions: {} });
   const qrCanvasRef = useRef(null);
   const anonymous = form.submission_type === "anonymous";
   const submissionPolicy = policy?.grievanceSubmission;
-  const allowedTypes = submissionPolicy?.allowedFileTypes || [];
-  const allowedMimeTypes = new Set(allowedTypes.flatMap((type) => fileTypeRegistry[type]?.mime || []));
-  const attachmentAccept = allowedTypes.map((type) => fileTypeRegistry[type]?.accept).filter(Boolean).join(",");
-  const maximumFiles = submissionPolicy
-    ? (submissionPolicy.allowMultipleAttachments ? submissionPolicy.maximumAttachmentCount : 1)
-    : 0;
+  const attachmentPolicy = buildAttachmentPolicy({
+    types: attachmentTypes,
+    allowedTypeKeys: submissionPolicy?.allowedFileTypes,
+    maximumFiles: submissionPolicy ? (submissionPolicy.allowMultipleAttachments ? submissionPolicy.maximumAttachmentCount : 1) : 0,
+    maximumSizeMb: submissionPolicy?.maximumAttachmentSizeMb || 1,
+  });
+  const allowedTypes = attachmentPolicy.allowedLabels;
+  const attachmentAccept = attachmentPolicy.accept;
+  const maximumFiles = attachmentPolicy.maximumFiles;
   const normalizedFormOptions = normalizeGrievanceFormOptions(catalog.formOptions);
   const assistanceOptions = normalizedFormOptions.assistance;
   const contactOptions = normalizedFormOptions.contactPreferences;
@@ -135,6 +129,7 @@ const AdminGrievanceForm = () => {
           throw new Error("Required grievance form choices are unavailable");
         }
         setPolicy(settingsResponse.data.data);
+        setAttachmentTypes(settingsResponse.data.meta?.capabilities?.attachments?.types || []);
         setCatalog(nextCatalog);
         setForm((current) => reconcileGrievanceFormSelections(current, nextCatalog.formOptions));
       })
@@ -246,11 +241,12 @@ const AdminGrievanceForm = () => {
     }
 
     if (stepNumber === 3) {
+      if (!attachmentPolicy.allowedTypes.length) return "Attachment configuration is unavailable. Submission is disabled.";
       if (!form.has_documents) return "Select whether supporting documents are available.";
       if (!form.has_witnesses) return "Select whether there are witnesses.";
       if (files.length > maximumFiles) return `Upload a maximum of ${maximumFiles} document${maximumFiles === 1 ? "" : "s"}.`;
-      if (files.some((file) => file.size > submissionPolicy.maximumAttachmentSizeMb * 1024 * 1024)) return `Each document must be ${submissionPolicy.maximumAttachmentSizeMb} MB or smaller.`;
-      if (files.some((file) => !allowedMimeTypes.has(file.type))) return `Use ${allowedTypes.join(", ")} documents only.`;
+      if (files.some((file) => file.size > attachmentPolicy.maximumSizeBytes)) return `Each document must be ${attachmentPolicy.maximumSizeMb} MB or smaller.`;
+      if (files.some((file) => !attachmentPolicy.accepts(file))) return `Use ${allowedTypes.join(", ")} documents only.`;
       if (form.has_documents === "yes" && !files.length) return "Attach at least one supporting document or select No.";
       if (form.has_witnesses === "yes" && !form.witness_name.trim()) return "Enter the witness name.";
       if (form.has_witnesses === "yes" && form.witness_phone.replace(/\D/g, "").length < 7) return "Enter a valid witness phone number.";

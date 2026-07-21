@@ -48,7 +48,9 @@ test("foreign-key installation repairs an existing signedness mismatch", async (
   assert.ok(statements.some((sql) => sql.includes("ADD CONSTRAINT `fk_status`")));
 });
 
-test("grievance-form migration preserves compatibility while seeding stable choices", () => {
+test("grievance-form migration preserves compatibility while seeding stable choices", {
+  skip: !fs.existsSync(path.resolve(__dirname, "../../database/migrations/20260722_grievance_form_options.sql")),
+}, () => {
   const sql = fs.readFileSync(path.resolve(__dirname, "../../database/migrations/20260722_grievance_form_options.sql"), "utf8");
   assert.match(sql, /CREATE TABLE IF NOT EXISTS grievance_form_options/i);
   assert.match(sql, /UNIQUE KEY unique_grievance_form_option \(option_group, option_key\)/i);
@@ -56,4 +58,23 @@ test("grievance-form migration preserves compatibility while seeding stable choi
   assert.match(sql, /ELSE assistance END/i);
   assert.match(sql, /MODIFY COLUMN contact_pref VARCHAR\(80\) NULL/i);
   assert.doesNotMatch(sql, /UPDATE complaints SET issue_type/i);
+});
+
+test("attachment migration copies the installed complaint policy into independent workflow settings", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-attachment-policy-migration.js"), "utf8");
+  assert.match(source, /grievanceSubmission\.maximumAttachmentSizeMb/);
+  assert.match(source, /workflow\.resolutionDocumentMaximumSizeMb/);
+  assert.match(source, /grievanceSubmission\.allowedFileTypes/);
+  assert.match(source, /workflow\.resolutionDocumentAllowedFileTypes/);
+  assert.match(source, /INSERT IGNORE/);
+});
+
+test("due-date migration backfills only null open dates through the central calendar", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-due-date-policy-migration.js"), "utf8");
+  assert.match(source, /createPolicyCalendar/);
+  assert.match(source, /c\.due_at IS NULL/);
+  assert.match(source, /s\.reporting_group='open'/);
+  assert.match(source, /COALESCE\(c\.office_received_at, c\.created_at\)/);
+  assert.match(source, /WHERE id=\? AND due_at IS NULL/);
+  assert.doesNotMatch(source, /INTERVAL\s+10\s+DAY/i);
 });

@@ -36,6 +36,8 @@ test("public settings expose CAPTCHA readiness and site key without secrets", as
     siteKey: "browser-site-key",
     provider: "google-recaptcha-v2",
   });
+  assert.equal(res.body.meta.capabilities.attachments.types.length, 8);
+  assert.deepEqual(Object.keys(res.body.meta.capabilities.attachments.types[0]).sort(), ["extensions", "key", "label", "mimeTypes"].sort());
   assert.equal(JSON.stringify(res.body).includes("never-return-this-secret"), false);
 });
 

@@ -12,6 +12,7 @@ const { generalSettingsDefaults } = require("../utils/default-general-settings")
 const ConfigurationModel = require("../models/configuration.model");
 const { resolveInitialRouting } = require("../services/routing.service");
 const NotificationService = require("../services/notification.service");
+const { dateKey, getZonedParts, parsePortalDateTime } = require("../services/due-date.service");
 const {
   resolveGeneratedUploadPath,
   unlinkGeneratedUpload,
@@ -72,11 +73,8 @@ const isValidIsoDate = (value) => {
   );
 };
 
-const isFutureDate = (value) => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return new Date(`${value}T00:00:00`) > today;
-};
+const isFutureDate = (value, timeZone = "America/Belize") =>
+  value > dateKey(getZonedParts(new Date(), timeZone));
 
 const resolveSafeComplaintUploadPath = (file) => {
   return resolveGeneratedUploadPath(
@@ -327,7 +325,7 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults, formOpt
   if (!incidentDate || !isValidIsoDate(incidentDate)) {
     throw buildClientError("A valid incident date is required");
   }
-  if (isFutureDate(incidentDate)) {
+  if (isFutureDate(incidentDate, settings.portal.timeZone)) {
     throw buildClientError("Incident date cannot be in the future");
   }
   if (!incidentLocation) {
@@ -461,6 +459,7 @@ const validateGrievanceBody = (body, settings = generalSettingsDefaults, formOpt
 };
 
 const submitComplaint = async (req, res) => {
+  const acceptedAt = new Date();
   try {
     const [settings, formOptions] = await Promise.all([
       req.generalSettings || SettingsPolicy.getPolicy(),
@@ -501,6 +500,7 @@ const submitComplaint = async (req, res) => {
     const created = await ComplaintModel.createWithAttachments({
       complaint: {
         ...complaint,
+        submittedAt: acceptedAt,
         ipAddress: getIpAddress(req),
         userAgent: req.get("user-agent") || null,
       },
@@ -529,7 +529,7 @@ const submitComplaint = async (req, res) => {
         isAnonymous: complaint.isAnonymous,
         issueSummary: complaint.issueSummary,
         incidentLocation: complaint.incidentLocation,
-        submittedAt: new Date().toISOString(),
+        submittedAt: acceptedAt.toISOString(),
       },
     });
   } catch (error) {
@@ -547,6 +547,7 @@ const submitComplaint = async (req, res) => {
 };
 
 const submitAdminComplaint = async (req, res) => {
+  const acceptedAt = new Date();
   try {
     const [settings, formOptions] = await Promise.all([
       req.generalSettings || SettingsPolicy.getPolicy(),
@@ -565,7 +566,13 @@ const submitAdminComplaint = async (req, res) => {
     if (!receivedDate || !isValidIsoDate(receivedDate)) {
       throw buildClientError("A valid office received date is required");
     }
-    if (isFutureDate(receivedDate)) {
+    const officeReceivedAt = parsePortalDateTime(
+      receivedDate,
+      settings.portal.timeZone,
+      { defaultHour: 12 },
+    );
+    const acceptedPortalDate = dateKey(getZonedParts(acceptedAt, settings.portal.timeZone));
+    if (receivedDate > acceptedPortalDate) {
       throw buildClientError("Office received date cannot be in the future");
     }
     if (!receivedBy) {
@@ -595,11 +602,12 @@ const submitAdminComplaint = async (req, res) => {
     const created = await ComplaintModel.createWithAttachments({
       complaint: {
         ...complaint,
+        submittedAt: officeReceivedAt,
         ipAddress: getIpAddress(req),
         userAgent: req.get("user-agent") || null,
         officeData: {
           intakeSource: "walk_in",
-          receivedDate: `${receivedDate} 12:00:00`,
+          receivedDate: officeReceivedAt,
           receivedBy: receivedBy.slice(0, 120),
           initialClassification: classification,
           assignedTo: assignedTo.slice(0, 160),
@@ -644,7 +652,7 @@ const submitAdminComplaint = async (req, res) => {
         isAnonymous: complaint.isAnonymous,
         issueSummary: complaint.issueSummary,
         incidentLocation: complaint.incidentLocation,
-        submittedAt: new Date().toISOString(),
+        submittedAt: acceptedAt.toISOString(),
       },
     });
   } catch (error) {

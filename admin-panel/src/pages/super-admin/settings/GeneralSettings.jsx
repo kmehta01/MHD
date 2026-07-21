@@ -156,7 +156,7 @@ const GeneralSettings = () => {
       return (
         <fieldset className={`settings-multiselect ${field.full ? "settings-field-full" : ""}`} key={field.key}>
           <legend>{field.label}</legend>
-          <div>{field.options.map((item) => (
+          <div>{fieldOptions.map((item) => (
             <label key={item.value}>
               <input checked={(value || []).includes(item.value)} disabled={readOnly} onChange={(event) => {
                 const next = event.target.checked ? [...(value || []), item.value] : (value || []).filter((candidate) => candidate !== item.value);

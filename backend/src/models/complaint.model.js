@@ -1,7 +1,6 @@
 const db = require("../config/db");
 const { generateTicketNumber } = require("../services/ticket-number-generator.service");
 const { calculateDueAt } = require("../services/due-date.service");
-const { generalSettingsDefaults } = require("../utils/default-general-settings");
 
 const DEFAULT_TOKEN_PREFIX = "GRM";
 
@@ -44,6 +43,9 @@ const normalizePage = (value) =>
   Math.max(1, Number.parseInt(value, 10) || 1);
 
 const createWithAttachments = async ({ complaint, attachments }) => {
+  if (!complaint?.settings) {
+    throw new TypeError("Runtime General Settings are required to create a grievance");
+  }
   const connection = await db.getConnection();
 
   try {
@@ -53,7 +55,7 @@ const createWithAttachments = async ({ complaint, attachments }) => {
     const office = complaint.officeData || {};
     const dueAt = await calculateDueAt({
       startDate: complaint.submittedAt || new Date(),
-      settings: complaint.settings || generalSettingsDefaults,
+      settings: complaint.settings,
       executor: connection,
     });
     const generatedTicket = await generateTicketNumber({ transaction: connection });
