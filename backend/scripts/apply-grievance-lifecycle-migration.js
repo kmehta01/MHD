@@ -1,6 +1,6 @@
-const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
+const { readCompatibleMigration } = require("../src/utils/migration-sql");
 require("dotenv").config();
 
 const run = async () => {
@@ -10,7 +10,8 @@ const run = async () => {
     multipleStatements: true,
   });
   try {
-    await connection.query(fs.readFileSync(path.resolve(__dirname, "../../database/migrations/20260720_grievance_lifecycle.sql"), "utf8"));
+    const migrationPath = path.resolve(__dirname, "../../database/migrations/20260720_grievance_lifecycle.sql");
+    await connection.query(await readCompatibleMigration(connection, migrationPath));
     console.log("Grievance lifecycle migration completed successfully.");
   } finally {
     await connection.end();

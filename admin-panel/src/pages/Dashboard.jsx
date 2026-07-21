@@ -103,16 +103,17 @@ const palette = [
 
 const formatNumber = (value) => Number(value || 0).toLocaleString();
 
-const formatGeneratedAt = (value) => {
+const formatGeneratedAt = (value, timeZone = "America/Belize", timeFormat = "12 Hour") => {
   if (!value) return "Not available";
 
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "America/Belize",
+    timeZone,
     day: "2-digit",
     month: "short",
     year: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: timeFormat === "12 Hour",
   }).format(new Date(value));
 };
 
@@ -421,7 +422,7 @@ const Dashboard = () => {
           </span>
           <span>
             <Icon name="clock" size={15} /> Updated{" "}
-            {formatGeneratedAt(meta.generated_at)}
+            {formatGeneratedAt(meta.generated_at, meta.time_zone, meta.time_format)}
           </span>
         </div>
       </section>
@@ -561,7 +562,7 @@ const Dashboard = () => {
                 <Link key={item.id} to={`/grievances/${item.id}`}>
                   <strong>{item.token_number}</strong>
                   <span>{item.status} · {item.priority} · {item.department}</span>
-                  <time>{formatGeneratedAt(item.occurred_at)}</time>
+                  <time>{formatGeneratedAt(item.occurred_at, meta.time_zone, meta.time_format)}</time>
                 </Link>
               ))}
             </div>

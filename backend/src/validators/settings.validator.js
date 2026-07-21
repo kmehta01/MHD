@@ -87,6 +87,10 @@ const validateValue = (definition, rawValue) => {
   if (definition.phone && value && (value.length < 7 || !/^[+\d()\s.-]+$/.test(value))) {
     return { error: `${label} must be a valid phone number` };
   }
+  if (definition.timeZone && value) {
+    try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); }
+    catch { return { error: `${label} must be a valid IANA time zone` }; }
+  }
   if (definition.valueType === "file" && value && !value.startsWith("/uploads/settings/")) {
     return { error: `${label} must reference an uploaded settings file` };
   }
@@ -103,10 +107,6 @@ const validateConditionalRules = (settings, errors) => {
   }
   if (settings.grievanceSubmission?.displayDeclarationCheckbox && !settings.grievanceSubmission?.declarationText) {
     errors["grievanceSubmission.declarationText"] = "Declaration text is required when the checkbox is displayed";
-  }
-  if (settings.grievanceSubmission?.enableCaptcha &&
-      (!String(process.env.RECAPTCHA_SITE_KEY || "").trim() || !String(process.env.RECAPTCHA_SECRET_KEY || "").trim())) {
-    errors["grievanceSubmission.enableCaptcha"] = "Configure the reCAPTCHA site key and secret before enabling CAPTCHA";
   }
   if (!settings.grievanceSubmission?.allowedFileTypes?.length) {
     errors["grievanceSubmission.allowedFileTypes"] = "Select at least one allowed attachment type";
@@ -171,18 +171,25 @@ const validateGeneralSettingsPayload = async (req, res, next) => {
   ]));
   validateConditionalRules(conditionSettings, errors);
   const capabilities = SettingsPolicy.getRuntimeCapabilities();
-  if (conditionSettings.security.enableTwoFactorAuthentication && !capabilities.twoFactor.configured) {
+  const enabling = (group, key) =>
+    conditionSettings[group][key] === true && currentSettings[group][key] !== true;
+  if (enabling("grievanceSubmission", "enableCaptcha") && !capabilities.captcha.configured) {
+    errors["grievanceSubmission.enableCaptcha"] = "Configure the reCAPTCHA site key and secret before enabling CAPTCHA";
+  }
+  if (enabling("security", "enableTwoFactorAuthentication") && !capabilities.twoFactor.configured) {
     errors["security.enableTwoFactorAuthentication"] = "Configure two-factor encryption and SMTP before enabling two-factor authentication";
   }
-  if (conditionSettings.notifications.enableEmailNotifications && !capabilities.email.configured) {
+  if (enabling("notifications", "enableEmailNotifications") && !capabilities.email.configured) {
     errors["notifications.enableEmailNotifications"] = "Configure SMTP before enabling email notifications";
   }
-  if ((conditionSettings.grievanceSubmission.identificationNumberRequired ||
-       conditionSettings.ticket.trackingVerificationMethod === "Ticket Number and Identification Number") &&
+  const enablingIdentification = enabling("grievanceSubmission", "identificationNumberRequired") ||
+    (conditionSettings.ticket.trackingVerificationMethod === "Ticket Number and Identification Number" &&
+     currentSettings.ticket.trackingVerificationMethod !== "Ticket Number and Identification Number");
+  if (enablingIdentification &&
       !capabilities.pii.configured) {
     errors["grievanceSubmission.identificationNumberRequired"] = "Configure PII encryption before collecting identification numbers";
   }
-  if (conditionSettings.workflow.autoCloseResolvedGrievances) {
+  if (enabling("workflow", "autoCloseResolvedGrievances")) {
     try {
       const workflow = await ConfigurationModel.listWorkflow();
       const validTransition = workflow.transitions.some((transition) =>

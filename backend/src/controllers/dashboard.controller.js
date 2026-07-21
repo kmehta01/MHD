@@ -7,6 +7,7 @@ const { getGrievanceScope } = require("../utils/access-scope");
 const { hasPermission } = require("../utils/access-scope");
 const SettingsPolicy = require("../services/settings-policy.service");
 const { generalSettingsDefaults } = require("../utils/default-general-settings");
+const { getZonedParts, zonedPartsToDate } = require("../services/due-date.service");
 
 const STATUSES = [
   "New",
@@ -39,33 +40,26 @@ const DASHBOARD_CHART_SETTINGS = {
   recent_activity: "showRecentActivity",
 };
 
-const getBelizeDateParts = (date = new Date()) => {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Belize",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(date);
-  const get = (type) => parts.find((part) => part.type === type)?.value;
-
-  return {
-    year: Number(get("year")),
-    month: Number(get("month")),
-    day: Number(get("day")),
-  };
+const plainDate = (year, monthIndex, day) => {
+  const date = new Date(Date.UTC(year, monthIndex, day));
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
 };
 
-const getDashboardAnchors = (period = "Last 30 Days") => {
-  const { year, month, day } = getBelizeDateParts();
-  const todayStart = new Date(Date.UTC(year, month - 1, day, 6));
-  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-  const trendStart = new Date(Date.UTC(year, month - 12, 1, 6));
+const zonedStart = (parts, timeZone) => zonedPartsToDate({
+  ...parts, hour: 0, minute: 0, second: 0,
+}, timeZone);
+
+const getDashboardAnchors = (period = "Last 30 Days", timeZone = "America/Belize", now = new Date()) => {
+  const { year, month, day } = getZonedParts(now, timeZone);
+  const todayStart = zonedStart({ year, month, day }, timeZone);
+  const tomorrowStart = zonedStart(plainDate(year, month - 1, day + 1), timeZone);
+  const trendStart = zonedStart(plainDate(year, month - 12, 1), timeZone);
   const periodStarts = {
-    "Last 7 Days": new Date(todayStart.getTime() - 6 * 86400000),
-    "Last 30 Days": new Date(todayStart.getTime() - 29 * 86400000),
-    "Current Month": new Date(Date.UTC(year, month - 1, 1, 6)),
-    "Current Quarter": new Date(Date.UTC(year, Math.floor((month - 1) / 3) * 3, 1, 6)),
-    "Current Year": new Date(Date.UTC(year, 0, 1, 6)),
+    "Last 7 Days": zonedStart(plainDate(year, month - 1, day - 6), timeZone),
+    "Last 30 Days": zonedStart(plainDate(year, month - 1, day - 29), timeZone),
+    "Current Month": zonedStart({ year, month, day: 1 }, timeZone),
+    "Current Quarter": zonedStart({ year, month: Math.floor((month - 1) / 3) * 3 + 1, day: 1 }, timeZone),
+    "Current Year": zonedStart({ year, month: 1, day: 1 }, timeZone),
   };
 
   return { todayStart, tomorrowStart, trendStart, periodStart: periodStarts[period] || periodStarts["Last 30 Days"] };
@@ -84,11 +78,11 @@ const fillSeries = (labels, rows) => {
   }));
 };
 
-const buildMonthlyTrend = (rows) => {
+const buildMonthlyTrend = (rows, timeZone = "America/Belize", now = new Date()) => {
   const values = new Map(
     rows.map((row) => [row.period, toCount(row.value)]),
   );
-  const { year, month } = getBelizeDateParts();
+  const { year, month } = getZonedParts(now, timeZone);
 
   return Array.from({ length: 12 }, (_, index) => {
     const date = new Date(Date.UTC(year, month - 12 + index, 1));
@@ -140,7 +134,7 @@ const buildDashboardPayload = ({ user, result, scope, settings = generalSettings
       label: row.label,
       value: toCount(row.value),
     })),
-    monthly_trend: buildMonthlyTrend(result.trend),
+    monthly_trend: buildMonthlyTrend(result.trend, settings.portal.timeZone),
     by_priority: fillSeries(PRIORITIES, result.priorities),
     open_vs_resolved: [
       {
@@ -194,6 +188,9 @@ const buildDashboardPayload = ({ user, result, scope, settings = generalSettings
       department_id: scope.departmentId,
       generated_at: new Date().toISOString(),
       dashboard_period: settings.portal.defaultDashboardPeriod,
+      time_zone: settings.portal.timeZone,
+      date_format: settings.portal.dateFormat,
+      time_format: settings.portal.timeFormat,
       due_date_rule: settings.dueDate.dueDateRequired
         ? `${settings.dueDate.defaultResolutionDays} ${settings.dueDate.countWorkingDaysOnly ? "working" : "calendar"} days from submission`
         : "No automatic due date",
@@ -208,7 +205,7 @@ const getDashboard = async (req, res) => {
     const [scope, settings] = [getGrievanceScope(req.user), await SettingsPolicy.getPolicy()];
     const result = await DashboardModel.getDashboardData({
       scope,
-      ...getDashboardAnchors(settings.portal.defaultDashboardPeriod),
+      ...getDashboardAnchors(settings.portal.defaultDashboardPeriod, settings.portal.timeZone),
     });
 
     return res.json({

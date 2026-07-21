@@ -41,7 +41,7 @@ export const settingsSections = [
       { key: "allowAnonymousComplaints", label: "Allow Anonymous Complaints", type: "toggle" },
       { key: "mobileNumberRequired", label: "Mobile Number Required", type: "toggle" },
       { key: "emailAddressRequired", label: "Email Address Required", type: "toggle" },
-      { key: "identificationNumberRequired", label: "Identification Number Required", type: "toggle" },
+      { key: "identificationNumberRequired", label: "Identification Number Required", type: "toggle", runtimeCapability: "pii", unavailableHelp: "Configure PII encryption before collecting identification numbers." },
       { key: "allowCitizenDepartmentSelection", label: "Allow Citizen to Select Department", type: "toggle" },
       { key: "allowCitizenCategorySelection", label: "Allow Citizen to Select Category", type: "toggle" },
       { key: "allowMultipleAttachments", label: "Allow Multiple Attachments", type: "toggle" },
@@ -49,7 +49,7 @@ export const settingsSections = [
       { key: "maximumAttachmentSizeMb", label: "Maximum Attachment Size", type: "number", min: 1, max: 25, suffix: "MB" },
       { key: "allowedFileTypes", label: "Allowed File Types", type: "multiselect", options: options(["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX", "XLS", "XLSX"]), full: true },
       { key: "maximumDescriptionLength", label: "Maximum Description Length", type: "number", min: 250, max: 50000, suffix: "characters" },
-      { key: "enableCaptcha", label: "Enable CAPTCHA", type: "toggle" },
+      { key: "enableCaptcha", label: "Enable CAPTCHA", type: "toggle", runtimeCapability: "captcha", unavailableHelp: "Configure the reCAPTCHA site and secret keys before enabling CAPTCHA." },
       { key: "displayDeclarationCheckbox", label: "Display Declaration Checkbox", type: "toggle" },
       { key: "declarationText", label: "Declaration Text", type: "textarea", rows: 3, full: true, showWhen: ["displayDeclarationCheckbox", true] },
     ],
@@ -110,10 +110,13 @@ export const settingsSections = [
   {
     id: "notifications", title: "Notification Settings", icon: "bell", description: "Choose channels and operational events that trigger notifications.",
     fields: [
-      ["enableEmailNotifications", "Enable Email Notifications"], ["enableDashboardNotifications", "Enable Dashboard Notifications"],
+      ["enableEmailNotifications", "Enable Email Notifications", "email"], ["enableDashboardNotifications", "Enable Dashboard Notifications"],
       ["notifySuperAdminNewGrievance", "Notify Super Admin on New Grievance"], ["notifyAdminNewGrievance", "Notify Admin on New Grievance"], ["notifyDepartmentOnAssignment", "Notify Department on Assignment"], ["notifyCitizenStatusChange", "Notify Citizen on Status Change"],
       ["notifyDueDateReminder", "Notify on Due-Date Reminder"], ["notifyOverdueGrievance", "Notify on Overdue Grievance"], ["notifyAdminResolutionSubmission", "Notify Admin on Resolution Submission"], ["notifyDepartmentResolutionReturned", "Notify Department When Resolution Is Returned"], ["notifyCitizenGrievanceClosed", "Notify Citizen When Grievance Is Closed"],
-    ].map(([key, label]) => ({ key, label, type: "toggle" })),
+    ].map(([key, label, runtimeCapability]) => ({
+      key, label, type: "toggle", runtimeCapability,
+      unavailableHelp: runtimeCapability === "email" ? "Configure SMTP before enabling email notifications." : undefined,
+    })),
   },
   {
     id: "security", title: "Security Settings", icon: "shieldCheck", description: "Apply account, password, session, and login controls.",
@@ -128,7 +131,7 @@ export const settingsSections = [
       { key: "accountLockDurationMinutes", label: "Account Lock Duration", type: "number", min: 5, max: 1440, suffix: "minutes" },
       { key: "sessionTimeoutMinutes", label: "Session Timeout", type: "number", min: 5, max: 1440, suffix: "minutes" },
       { key: "forcePasswordChangeFirstLogin", label: "Force Password Change on First Login", type: "toggle" },
-      { key: "enableTwoFactorAuthentication", label: "Enable Two-Factor Authentication", type: "toggle" },
+      { key: "enableTwoFactorAuthentication", label: "Enable Two-Factor Authentication", type: "toggle", runtimeCapability: "two_factor", unavailableHelp: "Configure SMTP and the two-factor pepper before enabling two-factor authentication." },
       { key: "restrictConcurrentLogin", label: "Restrict Concurrent Login", type: "toggle" },
     ],
   },

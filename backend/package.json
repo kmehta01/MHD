@@ -16,6 +16,7 @@
     "migrate:grievance-lifecycle": "node scripts/apply-grievance-lifecycle-migration.js",
     "migrate:operational-runtime": "node scripts/apply-operational-runtime-migration.js",
     "migrate:ticket-number": "node scripts/apply-ticket-number-migration.js",
+    "audit:general-settings": "node scripts/audit-general-settings.js",
     "verify:smtp": "node scripts/verify-smtp.js",
     "two-factor:break-glass": "node scripts/break-glass-recovery-codes.js",
     "test": "node --test"

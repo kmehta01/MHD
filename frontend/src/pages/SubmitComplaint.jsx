@@ -69,7 +69,7 @@ const getToday = () => {
   return localDate.toISOString().split("T")[0];
 };
 
-const createInitialForm = () => ({
+const createInitialForm = (defaultLocation = "") => ({
   assistance: [],
   assistance_other: "",
   submission_type: "named",
@@ -90,7 +90,7 @@ const createInitialForm = () => ({
   issue_other: "",
   channel: [],
   incident_date: "",
-  incident_location: "",
+  incident_location: defaultLocation,
   description: "",
   desired_outcome: "",
   tried_resolve: "",
@@ -176,7 +176,7 @@ function SubmitComplaint() {
   const submissionSettings = settings.grievanceSubmission;
   const ticketSettings = settings.ticket;
   const privacySettings = settings.privacy;
-  const [form, setForm] = useState(createInitialForm);
+  const [form, setForm] = useState(() => createInitialForm(settings.organization.defaultLocation));
   const [files, setFiles] = useState([]);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [activeStep, setActiveStep] = useState(1);
@@ -184,6 +184,7 @@ function SubmitComplaint() {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [captchaToken, setCaptchaToken] = useState("");
+  const [captchaResetVersion, setCaptchaResetVersion] = useState(0);
   const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [] });
   const [catalogError, setCatalogError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
@@ -235,13 +236,6 @@ function SubmitComplaint() {
     ].filter(Boolean),
     [catalog.categories, form.category_id, form.issue_other],
   );
-
-  useEffect(() => {
-    setForm((current) => current.incident_location ? current : {
-      ...current,
-      incident_location: settings.organization.defaultLocation || "",
-    });
-  }, [settings.organization.defaultLocation]);
 
   useEffect(() => {
     let active = true;
@@ -612,15 +606,18 @@ function SubmitComplaint() {
       }
 
       setConfirmation(result.data);
-      setForm(createInitialForm());
+      setForm(createInitialForm(settings.organization.defaultLocation));
       setFiles([]);
       setCaptchaToken("");
+      setCaptchaResetVersion((current) => current + 1);
       setFileInputKey((current) => current + 1);
       setFieldErrors({});
       setActiveStep(1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (error) {
       setMessage(error.message || "Failed to submit grievance");
+      setCaptchaToken("");
+      setCaptchaResetVersion((current) => current + 1);
     } finally {
       setSubmitting(false);
     }
@@ -1769,7 +1766,7 @@ function SubmitComplaint() {
                           {submissionSettings.enableCaptcha ? (
                             captcha.ready ? (
                               <>
-                                <RecaptchaCheckbox onChange={setCaptchaToken} siteKey={captcha.siteKey} />
+                                <RecaptchaCheckbox onChange={setCaptchaToken} resetVersion={captchaResetVersion} siteKey={captcha.siteKey} />
                                 {fieldError("captchaToken")}
                               </>
                             ) : (

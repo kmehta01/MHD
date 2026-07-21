@@ -27,7 +27,7 @@ const generalSettingDefinitions = [
   define("portal", "defaultLanguage", "English", "string", { options: ["English", "Spanish"], isPublic: true }),
   define("portal", "dateFormat", "DD/MM/YYYY", "string", { options: ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], isPublic: true }),
   define("portal", "timeFormat", "12 Hour", "string", { options: ["12 Hour", "24 Hour"], isPublic: true }),
-  define("portal", "timeZone", "America/Belize", "string", { required: true, maxLength: 100, isPublic: true }),
+  define("portal", "timeZone", "America/Belize", "string", { required: true, maxLength: 100, timeZone: true, isPublic: true }),
   define("portal", "recordsPerPage", 25, "number", { integer: true, min: 5, max: 200 }),
   define("portal", "defaultDashboardPeriod", "Last 30 Days", "string", { options: ["Last 7 Days", "Last 30 Days", "Current Month", "Current Quarter", "Current Year"] }),
   define("portal", "maintenanceMode", false, "boolean", { isPublic: true }),

@@ -29,8 +29,10 @@ const RuntimeConfiguration = () => {
 
   useEffect(() => {
     let active = true;
-    load().catch((error) => { if (active) setMessage(error.response?.data?.message || "Failed to load configuration"); });
-    return () => { active = false; };
+    const timer = window.setTimeout(() => {
+      load().catch((error) => { if (active) setMessage(error.response?.data?.message || "Failed to load configuration"); });
+    }, 0);
+    return () => { active = false; window.clearTimeout(timer); };
   }, [load]);
 
   const execute = async (operation, success) => {

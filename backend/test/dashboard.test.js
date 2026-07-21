@@ -74,6 +74,17 @@ test("dashboard Belize date anchors define one full local calendar day", () => {
   assert.equal(trendStart.getUTCHours(), 6);
 });
 
+test("dashboard anchors honor configured time zones and daylight-saving boundaries", () => {
+  const { todayStart, tomorrowStart } = getDashboardAnchors(
+    "Last 30 Days",
+    "America/New_York",
+    new Date("2026-03-08T12:00:00.000Z"),
+  );
+
+  assert.equal(todayStart.toISOString(), "2026-03-08T05:00:00.000Z");
+  assert.equal(tomorrowStart.toISOString(), "2026-03-09T04:00:00.000Z");
+});
+
 test("dashboard payload only includes widgets granted to the role", () => {
   const payload = buildDashboardPayload({
     user: {

@@ -75,6 +75,7 @@ ALTER TABLE complaints
   ADD COLUMN IF NOT EXISTS submitted_department_id INT UNSIGNED NULL AFTER assigned_department_id,
   ADD COLUMN IF NOT EXISTS assigned_officer_id INT UNSIGNED NULL AFTER submitted_department_id,
   ADD COLUMN IF NOT EXISTS is_escalated TINYINT(1) NOT NULL DEFAULT 0 AFTER due_at,
+  ADD COLUMN IF NOT EXISTS overdue_at DATETIME NULL AFTER is_escalated,
   ADD COLUMN IF NOT EXISTS anonymized_at DATETIME NULL AFTER closed_at;
 
 CREATE TABLE IF NOT EXISTS complaint_status_history (

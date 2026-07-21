@@ -268,8 +268,11 @@ CREATE TABLE IF NOT EXISTS complaints (
     'Returned'
   ) NOT NULL DEFAULT 'New',
   due_at DATETIME NULL,
+  is_escalated TINYINT(1) NOT NULL DEFAULT 0,
+  overdue_at DATETIME NULL,
   resolved_at DATETIME NULL,
   closed_at DATETIME NULL,
+  anonymized_at DATETIME NULL,
   assistance VARCHAR(80) NULL,
   assistance_other VARCHAR(500) NULL,
   submission_type ENUM('named', 'anonymous') NOT NULL DEFAULT 'named',

@@ -7,7 +7,13 @@ const {
 const {
   validateGeneralSettingsPayload,
   validateSettingsReset,
+  validateValue,
 } = require("../src/validators/settings.validator");
+const SettingsService = require("../src/services/settings.service");
+const SettingsPolicy = require("../src/services/settings-policy.service");
+const { generalSettingDefinitions, generalSettingsDefaults } = require("../src/utils/default-general-settings");
+
+const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const createResponse = () => ({
   statusCode: 200,
@@ -70,7 +76,8 @@ test("General Settings mutations remain Super Admin only", () => {
   assert.equal(res.statusCode, 403);
 });
 
-test("General Settings validates and normalizes supported fields", () => {
+test("General Settings validates and normalizes supported fields", async (t) => {
+  t.mock.method(SettingsService, "getGeneralSettings", async () => clone(generalSettingsDefaults));
   const req = {
     body: {
       settings: {
@@ -86,7 +93,7 @@ test("General Settings validates and normalizes supported fields", () => {
   const res = createResponse();
   let continued = false;
 
-  validateGeneralSettingsPayload(req, res, () => {
+  await validateGeneralSettingsPayload(req, res, () => {
     continued = true;
   });
 
@@ -95,7 +102,8 @@ test("General Settings validates and normalizes supported fields", () => {
   assert.equal(req.validatedSettings.grievanceSubmission.maximumAttachmentCount, 4);
 });
 
-test("General Settings rejects unsafe and unknown fields", () => {
+test("General Settings rejects unsafe and unknown fields", async (t) => {
+  t.mock.method(SettingsService, "getGeneralSettings", async () => clone(generalSettingsDefaults));
   const req = {
     body: {
       settings: {
@@ -108,7 +116,7 @@ test("General Settings rejects unsafe and unknown fields", () => {
   };
   const res = createResponse();
 
-  validateGeneralSettingsPayload(req, res, () => {});
+  await validateGeneralSettingsPayload(req, res, () => {});
 
   assert.equal(res.statusCode, 422);
   assert.ok(res.body.errors["organization.organizationName"]);
@@ -132,5 +140,41 @@ test("General Settings reset requires exact confirmation and a reason", () => {
   validateSettingsReset(validReq, validRes, () => {
     continued = true;
   });
+  assert.equal(continued, true);
+});
+
+test("all 132 authoritative defaults satisfy their field definitions", () => {
+  assert.equal(generalSettingDefinitions.length, 132);
+  for (const definition of generalSettingDefinitions) {
+    const result = validateValue(definition, definition.defaultValue);
+    assert.equal(result.error, undefined, `${definition.settingKey}: ${result.error}`);
+  }
+});
+
+test("General Settings reject invalid IANA time zones", () => {
+  const definition = generalSettingDefinitions.find((item) => item.settingKey === "portal.timeZone");
+  assert.match(validateValue(definition, "Belize/Somewhere").error, /valid IANA time zone/);
+});
+
+test("CAPTCHA readiness is required when enabling it, but not for unrelated recovery edits", async (t) => {
+  const current = clone(generalSettingsDefaults);
+  t.mock.method(SettingsService, "getGeneralSettings", async () => clone(current));
+  t.mock.method(SettingsPolicy, "getRuntimeCapabilities", () => ({
+    captcha: { configured: false }, email: { configured: true },
+    twoFactor: { configured: true }, pii: { configured: true },
+  }));
+  const blocked = createResponse();
+  await validateGeneralSettingsPayload({
+    body: { settings: { grievanceSubmission: { enableCaptcha: true } } },
+  }, blocked, () => {});
+  assert.equal(blocked.statusCode, 422);
+  assert.ok(blocked.body.errors["grievanceSubmission.enableCaptcha"]);
+
+  current.grievanceSubmission.enableCaptcha = true;
+  const recovery = createResponse();
+  let continued = false;
+  await validateGeneralSettingsPayload({
+    body: { settings: { portal: { portalSubtitle: "Updated safely" } } },
+  }, recovery, () => { continued = true; });
   assert.equal(continued, true);
 });

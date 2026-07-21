@@ -43,49 +43,54 @@ const processReports = async () => {
   }
 };
 
-const processDueDates = async (settings) => {
-  if (!settings.dueDate.dueDateRequired || !await acquireLease("due-date-policy")) return;
+const processDueDates = async (settings, {
+  acquire = acquireLease,
+  enqueue = NotificationService.enqueueComplaintEvent,
+  query = (...args) => db.query(...args),
+} = {}) => {
+  if (!settings.dueDate.dueDateRequired || !await acquire("due-date-policy")) return;
   const finalStatuses = "('Closed','Rejected','Duplicate')";
   if (settings.notifications.notifyDueDateReminder) {
-    const [dueSoon] = await db.query(
+    const [dueSoon] = await query(
       `SELECT id, due_at FROM complaints
        WHERE due_at>=NOW() AND due_at<=DATE_ADD(NOW(), INTERVAL ? DAY)
          AND status NOT IN ${finalStatuses} LIMIT 500`,
       [settings.dueDate.dueDateReminderDays],
     );
     for (const complaint of dueSoon) {
-      await NotificationService.enqueueComplaintEvent({
+      await enqueue({
         eventType: "due_reminder", complaintId: complaint.id,
         eventKey: `due-reminder:${complaint.id}:${dateKey(complaint.due_at)}`,
       });
     }
   }
   if (settings.dueDate.automaticallyMarkOverdue) {
-    const [overdue] = await db.query(
+    const [overdue] = await query(
       `SELECT id, due_at FROM complaints WHERE due_at<NOW() AND status NOT IN ${finalStatuses} LIMIT 500`,
     );
     for (const complaint of overdue) {
-      await NotificationService.enqueueComplaintEvent({
+      await query(`UPDATE complaints SET overdue_at=COALESCE(overdue_at, NOW()) WHERE id=?`, [complaint.id]);
+      await enqueue({
         eventType: "overdue", complaintId: complaint.id,
         eventKey: `overdue:${complaint.id}:${dateKey(complaint.due_at)}`,
       });
     }
   }
   if (settings.dueDate.enableEscalation) {
-    const [overdue] = await db.query(
+    const [overdue] = await query(
       `SELECT id, due_at FROM complaints
        WHERE due_at<DATE_SUB(NOW(), INTERVAL ? DAY) AND status NOT IN ${finalStatuses} LIMIT 500`,
       [settings.dueDate.escalateAfterDays],
     );
     for (const complaint of overdue) {
       const escalationKey = `due:${dateKey(complaint.due_at)}:${settings.dueDate.escalateAfterDays}`;
-      const [result] = await db.query(
+      const [result] = await query(
         `INSERT IGNORE INTO complaint_escalations (complaint_id, escalation_key) VALUES (?, ?)`,
         [complaint.id, escalationKey],
       );
       if (result.affectedRows) {
-        await db.query(`UPDATE complaints SET is_escalated=1 WHERE id=?`, [complaint.id]);
-        await NotificationService.enqueueComplaintEvent({
+        await query(`UPDATE complaints SET is_escalated=1 WHERE id=?`, [complaint.id]);
+        await enqueue({
           eventType: "overdue", complaintId: complaint.id,
           eventKey: `escalation:${complaint.id}:${escalationKey}`,
         });

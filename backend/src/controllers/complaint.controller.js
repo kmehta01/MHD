@@ -214,7 +214,7 @@ const getComplaints = async (req, res) => {
       page: getOptionalInteger(req.query, "page", { defaultValue: 1 }),
       perPage: getOptionalInteger(req.query, "per_page", {
         defaultValue: settings.portal.recordsPerPage,
-        maximum: 100,
+        maximum: 200,
       }),
       scope,
     });

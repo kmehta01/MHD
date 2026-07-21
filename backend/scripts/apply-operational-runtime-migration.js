@@ -1,6 +1,6 @@
-const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
+const { readCompatibleMigration } = require("../src/utils/migration-sql");
 require("dotenv").config();
 
 const run = async () => {
@@ -10,7 +10,7 @@ const run = async () => {
   });
   try {
     const migration = path.resolve(__dirname, "../../database/migrations/20260720_operational_runtime.sql");
-    await connection.query(fs.readFileSync(migration, "utf8"));
+    await connection.query(await readCompatibleMigration(connection, migration));
     console.log("Operational runtime migration completed successfully.");
   } finally { await connection.end(); }
 };

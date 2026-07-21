@@ -156,12 +156,16 @@ const GeneralSettings = () => {
     const value = settings[group]?.[field.key];
     const fieldId = `${group}-${field.key}`;
     const fieldError = fieldErrors[`${group}.${field.key}`];
+    const runtimeReady = field.runtimeCapability
+      ? Boolean(meta?.runtime_capabilities?.[field.runtimeCapability]?.configured)
+      : true;
+    const runtimeBlocked = !runtimeReady && !value;
     if (field.showWhen && settings[group]?.[field.showWhen[0]] !== field.showWhen[1]) return null;
 
     if (field.type === "toggle") {
       return (
         <div className={field.full ? "settings-field-full" : ""} key={field.key}>
-          <SettingToggle checked={Boolean(value)} disabled={readOnly} help={field.help} id={fieldId} label={field.label} onChange={(next) => setField(group, field.key, next)} />
+          <SettingToggle checked={Boolean(value)} disabled={readOnly || runtimeBlocked} help={runtimeBlocked ? field.unavailableHelp : field.help} id={fieldId} label={field.label} onChange={(next) => setField(group, field.key, next)} />
           {fieldError ? <small className="settings-field-error">{fieldError}</small> : null}
         </div>
       );

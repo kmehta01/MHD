@@ -1,5 +1,6 @@
 const SettingsModel = require("../models/settings.model");
 const SettingsService = require("../services/settings.service");
+const SettingsPolicy = require("../services/settings-policy.service");
 const {
   removeSettingsFile,
   removeStoredSettingsFile,
@@ -15,6 +16,27 @@ const getCapabilities = (user) => ({
   read_only: user.role_slug !== "super-admin",
 });
 
+const getRuntimeCapabilities = () => {
+  const capabilities = SettingsPolicy.getRuntimeCapabilities();
+  return {
+    captcha: {
+      configured: capabilities.captcha.configured,
+      provider: capabilities.captcha.provider,
+    },
+    email: { configured: capabilities.email.configured },
+    two_factor: { configured: capabilities.twoFactor.configured },
+    pii: { configured: capabilities.pii.configured },
+  };
+};
+
+const buildResponseMeta = async (user, updateMeta = null, knownVersion = null) => ({
+  capabilities: getCapabilities(user),
+  runtime_capabilities: getRuntimeCapabilities(),
+  last_updated_at: updateMeta?.updated_at || null,
+  last_updated_by: updateMeta?.updated_by_name || null,
+  version: knownVersion ?? await SettingsService.getGeneralSettingsVersion(),
+});
+
 const getGeneralSettings = async (req, res) => {
   try {
     const [settings, updateMeta, version] = await Promise.all([
@@ -28,10 +50,7 @@ const getGeneralSettings = async (req, res) => {
       message: "General settings fetched successfully",
       data: settings,
       meta: {
-        capabilities: getCapabilities(req.user),
-        last_updated_at: updateMeta?.updated_at || null,
-        last_updated_by: updateMeta?.updated_by_name || null,
-        version,
+        ...(await buildResponseMeta(req.user, updateMeta, version)),
       },
     });
   } catch (error) {
@@ -60,10 +79,8 @@ const updateGeneralSettings = async (req, res) => {
       data: result.settings,
       changed_settings: result.changes,
       meta: {
-        capabilities: getCapabilities(req.user),
-        last_updated_at: result.meta?.updated_at || null,
+        ...(await buildResponseMeta(req.user, result.meta)),
         last_updated_by: result.meta?.updated_by_name || req.user.name,
-        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {
@@ -93,10 +110,8 @@ const uploadAsset = (assetType) => async (req, res) => {
       data: result.settings,
       file_path: storedPath,
       meta: {
-        capabilities: getCapabilities(req.user),
-        last_updated_at: result.meta?.updated_at || null,
+        ...(await buildResponseMeta(req.user, result.meta)),
         last_updated_by: result.meta?.updated_by_name || req.user.name,
-        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {
@@ -150,10 +165,8 @@ const resetGeneralSettings = async (req, res) => {
       data: result.settings,
       changed_settings: result.changes,
       meta: {
-        capabilities: getCapabilities(req.user),
-        last_updated_at: result.meta?.updated_at || null,
+        ...(await buildResponseMeta(req.user, result.meta)),
         last_updated_by: result.meta?.updated_by_name || req.user.name,
-        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {
@@ -167,6 +180,7 @@ const resetGeneralSettings = async (req, res) => {
 };
 
 module.exports = {
+  buildResponseMeta,
   getGeneralSettings,
   getGeneralSettingsHistory,
   resetGeneralSettings,

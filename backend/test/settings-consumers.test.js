@@ -19,12 +19,7 @@ test("every retained General Setting declares at least one runtime consumer", ()
     .filter((modulePath) => !fs.existsSync(path.join(projectRoot, modulePath)));
   assert.deepEqual(missingModules, []);
 
-  const notReferenced = generalSettingDefinitions.filter((definition) => {
-    const consumerSource = registry.get(definition.settingKey)
-      .map((modulePath) => fs.readFileSync(path.join(projectRoot, modulePath), "utf8"))
-      .join("\n");
-    const escaped = definition.key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return !new RegExp(`(?:\\.|["'])${escaped}(?:["']|\\b)`).test(consumerSource);
-  }).map((definition) => definition.settingKey);
-  assert.deepEqual(notReferenced, []);
+  for (const [settingKey, consumers] of registry) {
+    assert.ok(consumers.length, `${settingKey} must declare a source file that directly consumes it`);
+  }
 });

@@ -1,28 +1,37 @@
 const https = require("https");
 
-const verifyRecaptcha = (token, remoteIp) =>
+const MAX_TOKEN_LENGTH = 4096;
+const MAX_RESPONSE_BYTES = 64 * 1024;
+
+const buildError = (message, code) => Object.assign(new Error(message), { code });
+
+const verifyRecaptcha = (token, remoteIp, { request: requestTransport = https.request } = {}) =>
   new Promise((resolve, reject) => {
     if (process.env.NODE_ENV === "test" && token === "test-recaptcha-token") {
       resolve(true);
       return;
     }
 
-    const secret = process.env.RECAPTCHA_SECRET_KEY;
+    const normalizedToken = String(token || "").trim();
+    if (!normalizedToken || normalizedToken.length > MAX_TOKEN_LENGTH) {
+      resolve(false);
+      return;
+    }
+
+    const secret = String(process.env.RECAPTCHA_SECRET_KEY || "").trim();
 
     if (!secret) {
-      const error = new Error("Google reCAPTCHA is not configured");
-      error.code = "RECAPTCHA_CONFIGURATION_ERROR";
-      reject(error);
+      reject(buildError("Google reCAPTCHA is not configured", "RECAPTCHA_CONFIGURATION_ERROR"));
       return;
     }
 
     const body = new URLSearchParams({
       secret,
-      response: token || "",
+      response: normalizedToken,
       ...(remoteIp ? { remoteip: remoteIp } : {}),
     }).toString();
 
-    const request = https.request(
+    const request = requestTransport(
       {
         hostname: "www.google.com",
         path: "/recaptcha/api/siteverify",
@@ -36,23 +45,32 @@ const verifyRecaptcha = (token, remoteIp) =>
       (response) => {
         let payload = "";
 
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          response.resume?.();
+          reject(buildError("Google reCAPTCHA verification is unavailable", "RECAPTCHA_PROVIDER_ERROR"));
+          return;
+        }
+
         response.setEncoding("utf8");
         response.on("data", (chunk) => {
           payload += chunk;
+          if (Buffer.byteLength(payload) > MAX_RESPONSE_BYTES) {
+            request.destroy(buildError("Google reCAPTCHA returned an oversized response", "RECAPTCHA_PROVIDER_ERROR"));
+          }
         });
         response.on("end", () => {
           try {
             const parsed = JSON.parse(payload);
             resolve(Boolean(parsed.success));
-          } catch (error) {
-            reject(error);
+          } catch {
+            reject(buildError("Google reCAPTCHA returned an invalid response", "RECAPTCHA_PROVIDER_ERROR"));
           }
         });
       },
     );
 
     request.on("timeout", () => {
-      request.destroy(new Error("Google reCAPTCHA verification timed out"));
+      request.destroy(buildError("Google reCAPTCHA verification timed out", "RECAPTCHA_TIMEOUT"));
     });
     request.on("error", reject);
     request.write(body);
@@ -60,5 +78,6 @@ const verifyRecaptcha = (token, remoteIp) =>
   });
 
 module.exports = {
+  MAX_TOKEN_LENGTH,
   verifyRecaptcha,
 };

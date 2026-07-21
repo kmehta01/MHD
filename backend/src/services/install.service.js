@@ -3,6 +3,7 @@ const path = require("path");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const { readCompatibleMigration } = require("../utils/migration-sql");
 const {
   generalSettingDefinitions,
 } = require("../utils/default-general-settings");
@@ -334,7 +335,7 @@ const runSchema = async (connection) => {
     if (!fs.existsSync(migrationPath)) {
       throw new InstallerError("Required database migration not found", 500, { path: migrationPath });
     }
-    await connection.query(fs.readFileSync(migrationPath, "utf8"));
+    await connection.query(await readCompatibleMigration(connection, migrationPath));
   }
 };
 

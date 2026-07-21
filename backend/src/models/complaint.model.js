@@ -38,7 +38,7 @@ const buildComplaintToken = ({
 };
 
 const normalizeLimit = (value, fallback = 25) =>
-  Math.min(100, Math.max(1, Number.parseInt(value, 10) || fallback));
+  Math.min(200, Math.max(1, Number.parseInt(value, 10) || fallback));
 
 const normalizePage = (value) =>
   Math.max(1, Number.parseInt(value, 10) || 1);

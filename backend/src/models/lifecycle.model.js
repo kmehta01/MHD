@@ -190,12 +190,12 @@ const decideDueDateExtension = async ({ requestId, approved, note, actorId }) =>
       `UPDATE due_date_extension_requests SET status=?, decided_by=?, decision_note=?, decided_at=NOW() WHERE id=?`,
       [approved ? "approved" : "rejected", actorId, note || null, requestId],
     );
-    if (approved) await connection.query(`UPDATE complaints SET due_at=? WHERE id=?`, [request.requested_due_at, request.complaint_id]);
+    if (approved) await connection.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [request.requested_due_at, request.complaint_id]);
     return { request, approved };
   });
 
 const updateDueDate = async ({ complaintId, dueAt }) => {
-  const [result] = await db.query(`UPDATE complaints SET due_at=? WHERE id=?`, [dueAt, complaintId]);
+  const [result] = await db.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [dueAt, complaintId]);
   return result.affectedRows;
 };
 
@@ -247,7 +247,7 @@ const listOpenForDueDateRecalculation = async (limit = 500) => {
 
 const applyDueDateRecalculation = async (updates) => withTransaction(async (connection) => {
   for (const update of updates) {
-    await connection.query(`UPDATE complaints SET due_at=? WHERE id=?`, [update.dueAt, update.id]);
+    await connection.query(`UPDATE complaints SET due_at=?, overdue_at=NULL WHERE id=?`, [update.dueAt, update.id]);
   }
   return updates.length;
 });

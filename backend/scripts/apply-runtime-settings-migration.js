@@ -1,7 +1,7 @@
-const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 const { seedGeneralSettings } = require("../src/services/settings.service");
+const { readCompatibleMigration } = require("../src/utils/migration-sql");
 require("dotenv").config();
 
 const run = async () => {
@@ -15,7 +15,7 @@ const run = async () => {
   try {
     await connection.beginTransaction();
     const migration = path.resolve(__dirname, "../../database/migrations/20260720_runtime_general_settings.sql");
-    await connection.query(fs.readFileSync(migration, "utf8"));
+    await connection.query(await readCompatibleMigration(connection, migration));
     await seedGeneralSettings(connection);
     await connection.commit();
     console.log("Runtime General Settings migration completed successfully.");
