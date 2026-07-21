@@ -102,6 +102,14 @@ const settingsUploadLimiter = createLimiter({
   message: "Too many settings file uploads. Please try again later.",
 });
 
+const profilePhotoUploadLimiter = createLimiter({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  keyGenerator: (req) =>
+    req.user?.id ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip)}`,
+  message: "Too many profile picture uploads. Please try again later.",
+});
+
 module.exports = {
   adminComplaintSubmissionLimiter,
   auditExportLimiter,
@@ -111,6 +119,7 @@ module.exports = {
   installerStatusLimiter,
   loginLimiter,
   publicComplaintSubmissionLimiter,
+  profilePhotoUploadLimiter,
   settingsMutationLimiter,
   settingsUploadLimiter,
   twoFactorResendLimiter,

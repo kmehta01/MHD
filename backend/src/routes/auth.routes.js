@@ -17,6 +17,7 @@ const {
 } = require("../middlewares/profile-photo-upload.middleware");
 const {
   loginLimiter,
+  profilePhotoUploadLimiter,
   twoFactorResendLimiter,
   twoFactorVerifyLimiter,
 } = require("../middlewares/rate-limit.middleware");
@@ -35,6 +36,7 @@ router.patch("/profile", verifyToken, updateCurrentProfile);
 router.post(
   "/profile/photo",
   verifyToken,
+  profilePhotoUploadLimiter,
   handleProfilePhotoUpload,
   updateCurrentProfilePhoto,
 );

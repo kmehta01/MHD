@@ -115,7 +115,7 @@ const uploadAsset = (assetType) => async (req, res) => {
       },
     });
   } catch (error) {
-    await removeSettingsFile(req.file?.path);
+    await removeSettingsFile(req.file);
     return res.status(500).json({
       status: false,
       success: false,

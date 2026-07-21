@@ -15,7 +15,6 @@ const { recordAuthEvent } = require("../services/auth-audit.service");
 const { runAuditedMutation } = require("../services/audit-log.service");
 const {
   removeUploadedFile,
-  uploadRoot: profilePhotoUploadRoot,
 } = require("../middlewares/profile-photo-upload.middleware");
 const {
   createChallengeToken,
@@ -267,7 +266,8 @@ const removeStoredProfilePhoto = async (storedPath) => {
   if (!storedPath?.startsWith(prefix)) return;
 
   const filename = path.basename(storedPath);
-  await removeUploadedFile(path.join(profilePhotoUploadRoot, filename));
+  if (storedPath !== `${prefix}${filename}`) return;
+  await removeUploadedFile(filename);
 };
 
 const updateCurrentProfilePhoto = async (req, res) => {
@@ -314,7 +314,7 @@ const updateCurrentProfilePhoto = async (req, res) => {
       },
     });
   } catch (error) {
-    await removeUploadedFile(req.file?.path);
+    await removeUploadedFile(req.file);
     return res.status(500).json({
       status: false,
       message: "Failed to update profile picture",

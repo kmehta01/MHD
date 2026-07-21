@@ -2,10 +2,15 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
+const {
+  readGeneratedUpload,
+  unlinkGeneratedUpload,
+} = require("../utils/safe-upload-file");
 
 const MAX_PROFILE_PHOTO_BYTES = 500 * 1024;
 const uploadRoot = path.resolve(__dirname, "../../uploads/profile-photos");
 fs.mkdirSync(uploadRoot, { recursive: true });
+const PROFILE_PHOTO_FILENAME_PATTERN = /^profile-\d+-[a-f0-9]{32}\.(?:jpg|jpeg|png|webp)$/;
 
 const allowedFiles = new Map([
   ["image/jpeg", new Set([".jpg", ".jpeg"])],
@@ -39,35 +44,34 @@ const upload = multer({
 });
 
 const hasValidImageSignature = async (file) => {
-  const handle = await fs.promises.open(file.path, "r");
-  try {
-    const signature = Buffer.alloc(12);
-    const { bytesRead } = await handle.read(signature, 0, signature.length, 0);
-    if (bytesRead < 3) return false;
+  const signature = await readGeneratedUpload({
+    uploadRoot,
+    fileOrFilename: file,
+    filenamePattern: PROFILE_PHOTO_FILENAME_PATTERN,
+    maximumBytes: MAX_PROFILE_PHOTO_BYTES,
+    bytesToRead: 12,
+  });
+  if (signature.length < 3) return false;
 
-    if (file.mimetype === "image/jpeg") {
-      return signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff;
-    }
-    if (file.mimetype === "image/png") {
-      return signature.subarray(0, 8).equals(
-        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-      );
-    }
-    if (file.mimetype === "image/webp") {
-      return signature.subarray(0, 4).toString("ascii") === "RIFF" &&
-        signature.subarray(8, 12).toString("ascii") === "WEBP";
-    }
-
-    return false;
-  } finally {
-    await handle.close();
+  if (file.mimetype === "image/jpeg") {
+    return signature[0] === 0xff && signature[1] === 0xd8 && signature[2] === 0xff;
   }
+  if (file.mimetype === "image/png") {
+    return signature.subarray(0, 8).equals(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  }
+  if (file.mimetype === "image/webp") {
+    return signature.subarray(0, 4).toString("ascii") === "RIFF" &&
+      signature.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+
+  return false;
 };
 
-const removeUploadedFile = async (filePath) => {
-  if (!filePath) return;
-  await fs.promises.unlink(filePath).catch(() => {});
-};
+const removeUploadedFile = async (fileOrFilename) =>
+  unlinkGeneratedUpload(uploadRoot, fileOrFilename, PROFILE_PHOTO_FILENAME_PATTERN)
+    .catch(() => false);
 
 const handleProfilePhotoUpload = (req, res, next) => {
   upload.single("profile_photo")(req, res, async (error) => {
@@ -91,7 +95,7 @@ const handleProfilePhotoUpload = (req, res, next) => {
 
     try {
       if (!(await hasValidImageSignature(req.file))) {
-        await removeUploadedFile(req.file.path);
+        await removeUploadedFile(req.file);
         return res.status(400).json({
           status: false,
           message: "The selected file is not a valid JPG, PNG, or WebP image",
@@ -100,7 +104,7 @@ const handleProfilePhotoUpload = (req, res, next) => {
 
       return next();
     } catch {
-      await removeUploadedFile(req.file.path);
+      await removeUploadedFile(req.file);
       return res.status(400).json({
         status: false,
         message: "The selected image could not be read",
@@ -111,6 +115,7 @@ const handleProfilePhotoUpload = (req, res, next) => {
 
 module.exports = {
   handleProfilePhotoUpload,
+  PROFILE_PHOTO_FILENAME_PATTERN,
   removeUploadedFile,
   uploadRoot,
 };

@@ -3,10 +3,15 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const SettingsService = require("../services/settings.service");
+const {
+  readGeneratedUpload,
+  unlinkGeneratedUpload,
+} = require("../utils/safe-upload-file");
 
 const ABSOLUTE_MAX_BYTES = 5 * 1024 * 1024;
 const uploadRoot = path.resolve(__dirname, "../../uploads/settings");
 fs.mkdirSync(uploadRoot, { recursive: true });
+const SETTINGS_FILENAME_PATTERN = /^(?:logo|favicon)-\d+-[a-f0-9]{32}\.(?:jpg|jpeg|png|svg|webp|ico)$/;
 
 const assetRules = {
   logo: {
@@ -27,10 +32,9 @@ const assetRules = {
   },
 };
 
-const removeSettingsFile = async (filePath) => {
-  if (!filePath) return;
-  await fs.promises.unlink(filePath).catch(() => {});
-};
+const removeSettingsFile = async (fileOrFilename) =>
+  unlinkGeneratedUpload(uploadRoot, fileOrFilename, SETTINGS_FILENAME_PATTERN)
+    .catch(() => false);
 
 const storage = multer.diskStorage({
   destination: (req, file, callback) => callback(null, uploadRoot),
@@ -54,7 +58,13 @@ const createUpload = (assetType) =>
   });
 
 const verifySignature = async (file) => {
-  const buffer = await fs.promises.readFile(file.path);
+  const buffer = await readGeneratedUpload({
+    uploadRoot,
+    fileOrFilename: file,
+    filenamePattern: SETTINGS_FILENAME_PATTERN,
+    maximumBytes: ABSOLUTE_MAX_BYTES,
+    bytesToRead: file.mimetype === "image/svg+xml" ? ABSOLUTE_MAX_BYTES : 16,
+  });
   if (file.mimetype === "image/jpeg") {
     return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
   }
@@ -95,19 +105,19 @@ const uploadSettingsAsset = (assetType) => {
         const settings = await SettingsService.getGeneralSettings();
         const configuredMaxBytes = settings.organization.settingsUploadMaxKb * 1024;
         if (req.file.size > configuredMaxBytes) {
-          await removeSettingsFile(req.file.path);
+          await removeSettingsFile(req.file);
           return res.status(400).json({
             status: false,
             message: `The file must be ${settings.organization.settingsUploadMaxKb} KB or smaller`,
           });
         }
         if (!(await verifySignature(req.file))) {
-          await removeSettingsFile(req.file.path);
+          await removeSettingsFile(req.file);
           return res.status(400).json({ status: false, message: `The selected ${assetType} file is not valid or contains unsafe content` });
         }
         return next();
       } catch {
-        await removeSettingsFile(req.file.path);
+        await removeSettingsFile(req.file);
         return res.status(500).json({ status: false, message: `Unable to validate the ${assetType} upload` });
       }
     });
@@ -115,14 +125,16 @@ const uploadSettingsAsset = (assetType) => {
 };
 
 const removeStoredSettingsFile = async (storedPath) => {
-  if (!storedPath?.startsWith("/uploads/settings/")) return;
+  if (typeof storedPath !== "string" || !storedPath.startsWith("/uploads/settings/")) return;
   const filename = path.basename(storedPath);
-  await removeSettingsFile(path.join(uploadRoot, filename));
+  if (storedPath !== `/uploads/settings/${filename}`) return;
+  await removeSettingsFile(filename);
 };
 
 module.exports = {
   removeSettingsFile,
   removeStoredSettingsFile,
+  SETTINGS_FILENAME_PATTERN,
   uploadRoot,
   uploadSettingsAsset,
 };

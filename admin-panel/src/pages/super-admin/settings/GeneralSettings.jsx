@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import DashboardPreview from "../../../components/settings/DashboardPreview";
 import FileUploadPreview from "../../../components/settings/FileUploadPreview";
 import SettingToggle from "../../../components/settings/SettingToggle";
@@ -9,6 +8,7 @@ import SettingsSidebar from "../../../components/settings/SettingsSidebar";
 import UnsavedChangesModal from "../../../components/settings/UnsavedChangesModal";
 import Icon from "../../../components/Icon";
 import useGeneralSettings from "../../../hooks/useGeneralSettings";
+import useUnsavedNavigationGuard from "../../../hooks/useUnsavedNavigationGuard";
 import { settingLabels, settingsSections } from "./settingsConfig";
 
 const formatUpdatedAt = (value) => {
@@ -19,7 +19,6 @@ const formatUpdatedAt = (value) => {
 };
 
 const GeneralSettings = () => {
-  const navigate = useNavigate();
   const {
     dirty, discardChanges, error, fieldErrors, load, loading, meta,
     restoreDefaults, save, saving, settings, updateField, uploadAsset,
@@ -35,9 +34,9 @@ const GeneralSettings = () => {
   const [resetError, setResetError] = useState("");
   const [changeReason, setChangeReason] = useState("");
   const [maintenancePending, setMaintenancePending] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
-  const [pendingHref, setPendingHref] = useState("");
   const [toast, setToast] = useState(null);
+  const navigationGuard = useUnsavedNavigationGuard(dirty);
+  const leaveOpen = navigationGuard.open;
 
   const capabilities = meta?.capabilities || {};
   const readOnly = Boolean(capabilities.read_only);
@@ -64,37 +63,11 @@ const GeneralSettings = () => {
       if (resetOpen) setResetOpen(false);
       else if (maintenancePending) setMaintenancePending(false);
       else if (historyOpen) setHistoryOpen(false);
-      else if (leaveOpen) setLeaveOpen(false);
+      else if (leaveOpen) navigationGuard.keepEditing();
     };
     document.addEventListener("keydown", closeTopDialog);
     return () => document.removeEventListener("keydown", closeTopDialog);
-  }, [historyOpen, leaveOpen, maintenancePending, resetOpen, saving]);
-
-  useEffect(() => {
-    const handleBeforeUnload = (event) => {
-      if (!dirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [dirty]);
-
-  useEffect(() => {
-    const interceptNavigation = (event) => {
-      if (!dirty || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target.closest?.("a[href]");
-      if (!anchor || anchor.target === "_blank") return;
-      const destination = new URL(anchor.href, window.location.href);
-      if (destination.origin !== window.location.origin || destination.pathname === window.location.pathname) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setPendingHref(`${destination.pathname}${destination.search}${destination.hash}`);
-      setLeaveOpen(true);
-    };
-    document.addEventListener("click", interceptNavigation, true);
-    return () => document.removeEventListener("click", interceptNavigation, true);
-  }, [dirty]);
+  }, [historyOpen, leaveOpen, maintenancePending, navigationGuard, resetOpen, saving]);
 
   useEffect(() => {
     if (loading || normalizedSearch) return undefined;
@@ -267,7 +240,11 @@ const GeneralSettings = () => {
       ) : null}
 
       <SettingsHistoryModal labels={settingLabels} onClose={() => setHistoryOpen(false)} open={historyOpen} />
-      <UnsavedChangesModal onDiscard={() => { const destination = pendingHref; discardChanges(); setLeaveOpen(false); setPendingHref(""); navigate(destination); }} onKeepEditing={() => { setLeaveOpen(false); setPendingHref(""); }} open={leaveOpen} />
+      <UnsavedChangesModal
+        onDiscard={() => navigationGuard.discardAndProceed(discardChanges)}
+        onKeepEditing={navigationGuard.keepEditing}
+        open={leaveOpen}
+      />
 
       {maintenancePending ? <div className="modal-backdrop settings-modal-backdrop"><section aria-labelledby="maintenance-title" aria-modal="true" className="settings-confirm-modal" role="dialog"><span className="settings-modal-icon warning"><Icon name="alert" size={23} /></span><h2 id="maintenance-title">Enable maintenance mode?</h2><p>Public users may be unable to submit or track grievances until maintenance mode is disabled.</p><div className="settings-modal-actions"><button className="button button-secondary" onClick={() => setMaintenancePending(false)} type="button">Cancel</button><button className="button button-primary" onClick={() => { updateField("portal", "maintenanceMode", true); setMaintenancePending(false); }} type="button">Enable maintenance</button></div></section></div> : null}
 

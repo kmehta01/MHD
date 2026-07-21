@@ -45,5 +45,12 @@
   },
   "devDependencies": {
     "nodemon": "^3.1.14"
+  },
+  "overrides": {
+    "exceljs": {
+      "archiver": "^7.0.1",
+      "unzipper": "^0.12.5",
+      "uuid": "^11.1.1"
+    }
   }
 }

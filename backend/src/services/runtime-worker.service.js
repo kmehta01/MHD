@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const fs = require("fs/promises");
 const path = require("path");
 const db = require("../config/db");
 const SettingsPolicy = require("./settings-policy.service");
@@ -7,10 +6,12 @@ const NotificationService = require("./notification.service");
 const LifecycleModel = require("../models/lifecycle.model");
 const ReportService = require("./report.service");
 const AuditLogModel = require("../models/audit-log.model");
+const { unlinkGeneratedUpload } = require("../utils/safe-upload-file");
 
 const owner = crypto.randomUUID();
 const backendRoot = path.resolve(__dirname, "../..");
 const uploadRoot = path.resolve(backendRoot, "uploads", "complaints");
+const STORED_COMPLAINT_FILE_PATTERN = /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png|xls|xlsx)$/;
 let timer = null;
 let running = false;
 
@@ -120,10 +121,13 @@ const processAutoClose = async (settings) => {
 };
 
 const safeDeleteAttachment = async (storagePath) => {
-  const absolute = path.resolve(backendRoot, String(storagePath || ""));
-  const relative = path.relative(uploadRoot, absolute);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return;
-  await fs.unlink(absolute).catch((error) => { if (error.code !== "ENOENT") throw error; });
+  if (typeof storagePath !== "string") return false;
+  const normalized = storagePath.replace(/\\/g, "/");
+  const prefix = "uploads/complaints/";
+  if (!normalized.startsWith(prefix)) return false;
+  const filename = normalized.slice(prefix.length);
+  if (normalized !== `${prefix}${filename}` || filename.includes("/")) return false;
+  return unlinkGeneratedUpload(uploadRoot, filename, STORED_COMPLAINT_FILE_PATTERN);
 };
 
 const processRetention = async (settings) => {

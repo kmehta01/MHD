@@ -149,4 +149,4 @@ const processNext = async () => {
   return true;
 };
 
-module.exports = { formatPortalDateTime, processNext, reportRoot };
+module.exports = { createExcel, formatPortalDateTime, processNext, reportRoot };

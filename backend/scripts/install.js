@@ -86,7 +86,11 @@ const readConfig = (configPath) => {
     );
   }
 
-  const resolvedPath = path.join(configRoot, argumentMatch[1]);
+  const safeFilename = path.basename(argumentMatch[1]);
+  if (safeFilename !== argumentMatch[1]) {
+    throw new InstallerError("Config file must be a direct child of backend/scripts");
+  }
+  const resolvedPath = path.join(configRoot, safeFilename);
 
   let fileStats;
 
@@ -114,10 +118,20 @@ const readConfig = (configPath) => {
     throw new InstallerError("Config file must remain inside backend/scripts");
   }
 
+  const noFollow = fs.constants.O_NOFOLLOW || 0;
+  let descriptor;
   try {
-    return JSON.parse(fs.readFileSync(canonicalPath, "utf8"));
-  } catch {
+    descriptor = fs.openSync(canonicalPath, fs.constants.O_RDONLY | noFollow);
+    const openedStats = fs.fstatSync(descriptor);
+    if (!openedStats.isFile() || openedStats.size !== fileStats.size || openedStats.size > MAX_CONFIG_FILE_SIZE) {
+      throw new InstallerError("Config changed while it was being inspected");
+    }
+    return JSON.parse(fs.readFileSync(descriptor, "utf8"));
+  } catch (error) {
+    if (error instanceof InstallerError) throw error;
     throw new InstallerError("Config file is not valid JSON");
+  } finally {
+    if (descriptor !== undefined) fs.closeSync(descriptor);
   }
 };
 

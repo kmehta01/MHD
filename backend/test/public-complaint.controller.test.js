@@ -72,6 +72,20 @@ test("requires conditional affected-person details", () => {
   );
 });
 
+test("ignores prototype-related keys without dynamic member access", () => {
+  const body = { ...validBody };
+  Object.defineProperty(body, "__proto__", {
+    enumerable: true,
+    value: { polluted: true },
+  });
+  body.constructor = { prototype: { polluted: true } };
+  body.prototype = { polluted: true };
+
+  const result = validateGrievanceBody(body);
+  assert.equal(result.fullName, "Test Complainant");
+  assert.equal({}.polluted, undefined);
+});
+
 test("resolves generated complaint filenames only inside the upload directory", () => {
   const resolved = resolveSafeComplaintUploadPath({
     filename: "1721462400000-123456789.pdf",

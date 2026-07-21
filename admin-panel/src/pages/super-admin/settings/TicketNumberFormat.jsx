@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import Icon from "../../../components/Icon";
 import SettingToggle from "../../../components/settings/SettingToggle";
 import FormatExamples from "../../../components/ticket-settings/FormatExamples";
@@ -10,32 +9,21 @@ import TicketPreviewCard from "../../../components/ticket-settings/TicketPreview
 import TicketSettingsHistoryModal from "../../../components/ticket-settings/TicketSettingsHistoryModal";
 import UnsavedChangesModal from "../../../components/ticket-settings/UnsavedChangesModal";
 import useTicketNumberSettings from "../../../hooks/useTicketNumberSettings";
+import useUnsavedNavigationGuard from "../../../hooks/useUnsavedNavigationGuard";
 
 const formatDate = (value) => value ? new Intl.DateTimeFormat("en-BZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not updated yet";
 
 const TicketNumberFormat = () => {
-  const navigate = useNavigate();
   const state = useTicketNumberSettings();
   const [reason, setReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [resetOpen, setResetOpen] = useState(false);
-  const [leaveOpen, setLeaveOpen] = useState(false);
-  const [pendingHref, setPendingHref] = useState("");
   const [toast, setToast] = useState(null);
+  const navigationGuard = useUnsavedNavigationGuard(state.dirty);
+  const leaveOpen = navigationGuard.open;
   const readOnly = Boolean(state.meta?.capabilities?.read_only);
 
   useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(null), 4500); return () => window.clearTimeout(timer); }, [toast]);
-  useEffect(() => { const listener = (event) => { if (!state.dirty) return; event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", listener); return () => window.removeEventListener("beforeunload", listener); }, [state.dirty]);
-  useEffect(() => {
-    const listener = (event) => {
-      if (!state.dirty || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
-      const anchor = event.target.closest?.("a[href]"); if (!anchor || anchor.target === "_blank") return;
-      const destination = new URL(anchor.href, window.location.href);
-      if (destination.origin !== window.location.origin || destination.pathname === window.location.pathname) return;
-      event.preventDefault(); event.stopPropagation(); setPendingHref(`${destination.pathname}${destination.search}${destination.hash}`); setLeaveOpen(true);
-    };
-    document.addEventListener("click", listener, true); return () => document.removeEventListener("click", listener, true);
-  }, [state.dirty]);
 
   if (state.loading) return <div className="general-settings-loading" aria-label="Loading Ticket Number Format settings"><div className="settings-skeleton heading" /><div className="settings-skeleton-grid"><span /><span /><span /><span /></div></div>;
   if (!state.settings) return <div className="general-settings-load-error"><Icon name="alert" size={28} /><h1>Ticket Number Format could not be loaded</h1><p>{state.error}</p><button className="button button-primary" onClick={state.load} type="button">Try again</button></div>;
@@ -60,7 +48,7 @@ const TicketNumberFormat = () => {
     {!readOnly ? <div className="settings-save-bar"><label><span>Change note <small>Optional · included in history</small></span><input maxLength="500" onChange={(event) => setReason(event.target.value)} placeholder="Briefly explain this update" value={reason} /></label><div><span className={state.dirty ? "settings-unsaved active" : "settings-unsaved"}>{state.dirty ? "Unsaved changes" : "All changes saved"}</span><button className="button button-secondary" disabled={!state.dirty || state.saving} onClick={state.discardChanges} type="button">Reset Changes</button><button className="button button-primary" disabled={!state.dirty || state.saving || !state.preview} onClick={save} type="button"><Icon name="check" size={16} /> {state.saving ? "Saving…" : "Save Changes"}</button></div></div> : null}
     <ResetSequenceModal onClose={(result) => { setResetOpen(false); if (result?.ok) setToast({ type: "success", text: result.message }); }} onReset={state.resetSequence} open={resetOpen} saving={state.saving} sequence={state.sequence} settings={state.settings} />
     <TicketSettingsHistoryModal onClose={() => setHistoryOpen(false)} open={historyOpen} />
-    <UnsavedChangesModal onDiscard={() => { const destination = pendingHref; state.discardChanges(); setLeaveOpen(false); setPendingHref(""); navigate(destination); }} onKeepEditing={() => { setLeaveOpen(false); setPendingHref(""); }} open={leaveOpen} />
+    <UnsavedChangesModal onDiscard={() => navigationGuard.discardAndProceed(state.discardChanges)} onKeepEditing={navigationGuard.keepEditing} open={leaveOpen} />
   </div>;
 };
 

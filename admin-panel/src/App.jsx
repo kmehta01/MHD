@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider } from "react-router-dom";
 import "./App.css";
 
 import Install from "./pages/Install";
@@ -28,10 +28,9 @@ import SuperAdminRoute from "./components/SuperAdminRoute";
 import RoleRoute from "./components/RoleRoute";
 import AdminLayout from "./layouts/AdminLayout";
 
-function App() {
-  return (
-    <BrowserRouter>
-      <Routes>
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <>
         <Route path="/install" element={<Install />} />
         <Route path="/" element={<Navigate to="/login" />} />
         <Route path="/login" element={<Login />} />
@@ -279,9 +278,12 @@ function App() {
           /> */}
           {/* <Route path="*" element={<Navigate to="/dashboard" replace />} /> */}
         </Route>
-      </Routes>
-    </BrowserRouter>
-  );
+    </>
+  ),
+);
+
+function App() {
+  return <RouterProvider router={router} />;
 }
 
 export default App;

@@ -2,9 +2,14 @@ const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
 const SettingsPolicy = require("../services/settings-policy.service");
+const {
+  readGeneratedUpload,
+  unlinkGeneratedUpload,
+} = require("../utils/safe-upload-file");
 
 const uploadRoot = path.resolve(__dirname, "../../uploads/complaints");
 fs.mkdirSync(uploadRoot, { recursive: true });
+const COMPLAINT_FILENAME_PATTERN = /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png|xls|xlsx)$/;
 
 const FILE_TYPE_REGISTRY = Object.freeze({
   PDF: { extensions: [".pdf"], mimeTypes: ["application/pdf"] },
@@ -53,27 +58,24 @@ const acceptsFile = (file, allowedTypes) => {
 };
 
 const removeUploadedFiles = async (files = []) => {
-  await Promise.all(files.map((file) => {
-    const absolute = path.resolve(file.path || "");
-    const relative = path.relative(uploadRoot, absolute);
-    if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return Promise.resolve();
-    return fs.promises.unlink(absolute).catch(() => {});
-  }));
+  await Promise.all(files.map((file) =>
+    unlinkGeneratedUpload(uploadRoot, file, COMPLAINT_FILENAME_PATTERN).catch(() => false)));
 };
 
 const hasValidSignature = async (file) => {
-  const handle = await fs.promises.open(file.path, "r");
-  try {
-    const buffer = Buffer.alloc(16);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    const bytes = buffer.subarray(0, bytesRead);
-    if (file.mimetype === "application/pdf") return bytes.subarray(0, 5).toString("ascii") === "%PDF-";
-    if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
-    if (file.mimetype === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    if (["application/msword", "application/vnd.ms-excel"].includes(file.mimetype)) return bytes.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
-    if (file.mimetype.includes("openxmlformats-officedocument")) return bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
-    return false;
-  } finally { await handle.close(); }
+  const bytes = await readGeneratedUpload({
+    uploadRoot,
+    fileOrFilename: file,
+    filenamePattern: COMPLAINT_FILENAME_PATTERN,
+    maximumBytes: 25 * 1024 * 1024,
+    bytesToRead: 16,
+  });
+  if (file.mimetype === "application/pdf") return bytes.subarray(0, 5).toString("ascii") === "%PDF-";
+  if (file.mimetype === "image/jpeg") return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (file.mimetype === "image/png") return bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  if (["application/msword", "application/vnd.ms-excel"].includes(file.mimetype)) return bytes.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]));
+  if (file.mimetype.includes("openxmlformats-officedocument")) return bytes.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  return false;
 };
 
 const handleComplaintUpload = async (req, res, next) => {
@@ -122,6 +124,7 @@ const handleComplaintUpload = async (req, res, next) => {
 
 module.exports = {
   FILE_TYPE_REGISTRY,
+  COMPLAINT_FILENAME_PATTERN,
   getUploadPolicy,
   handleComplaintUpload,
   hasValidSignature,

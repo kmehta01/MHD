@@ -1,4 +1,3 @@
-const fs = require("fs/promises");
 const path = require("path");
 const ComplaintModel = require("../models/complaint.model");
 const { recordAuditEvent } = require("../services/audit-log.service");
@@ -13,6 +12,10 @@ const { generalSettingsDefaults } = require("../utils/default-general-settings")
 const ConfigurationModel = require("../models/configuration.model");
 const { resolveInitialRouting } = require("../services/routing.service");
 const NotificationService = require("../services/notification.service");
+const {
+  resolveGeneratedUploadPath,
+  unlinkGeneratedUpload,
+} = require("../utils/safe-upload-file");
 
 const backendRoot = path.resolve(__dirname, "../..");
 const complaintUploadRoot = path.resolve(
@@ -65,14 +68,12 @@ const getIpAddress = (req) =>
   String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "") ||
   null;
 
-const getString = (body, field) => {
-  const value = body[field];
+const getString = (value) => {
   if (Array.isArray(value)) return String(value[0] || "").trim();
   return String(value || "").trim();
 };
 
-const getStringArray = (body, field) => {
-  const value = body[field];
+const getStringArray = (value) => {
   if (Array.isArray(value)) {
     return [...new Set(value.map((item) => String(item || "").trim()))].filter(
       Boolean,
@@ -108,40 +109,22 @@ const isFutureDate = (value) => {
 };
 
 const resolveSafeComplaintUploadPath = (file) => {
-  const storedName =
-    typeof file?.filename === "string" ? file.filename : "";
-
-  if (!STORED_COMPLAINT_FILE_PATTERN.test(storedName)) {
-    return null;
-  }
-
-  const uploadPath = path.resolve(complaintUploadRoot, storedName);
-  const relativePath = path.relative(complaintUploadRoot, uploadPath);
-
-  if (
-    !relativePath ||
-    relativePath === ".." ||
-    relativePath.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relativePath)
-  ) {
-    return null;
-  }
-
-  return uploadPath;
+  return resolveGeneratedUploadPath(
+    complaintUploadRoot,
+    file,
+    STORED_COMPLAINT_FILE_PATTERN,
+  );
 };
 
 const cleanupFiles = async (files = []) => {
   await Promise.all(
     files.map((file) => {
-      const uploadPath = resolveSafeComplaintUploadPath(file);
-
-      if (!uploadPath) {
-        return Promise.resolve();
-      }
-
-      return fs.unlink(uploadPath).catch(() => {
-        // Best-effort cleanup for failed multipart submissions.
-      });
+      if (!resolveSafeComplaintUploadPath(file)) return Promise.resolve();
+      return unlinkGeneratedUpload(
+        complaintUploadRoot,
+        file,
+        STORED_COMPLAINT_FILE_PATTERN,
+      ).catch(() => false);
     }),
   );
 };
@@ -176,20 +159,20 @@ const buildClientError = (message) => {
   return error;
 };
 
-const getPositiveId = (body, field) => {
-  const raw = getString(body, field);
+const getPositiveId = (rawValue, label) => {
+  const raw = getString(rawValue);
   if (!raw) return null;
   const value = Number(raw);
-  if (!Number.isInteger(value) || value <= 0) throw buildClientError(`Invalid ${field.replace(/_/g, " ")}`);
+  if (!Number.isInteger(value) || value <= 0) throw buildClientError(`Invalid ${label}`);
   return value;
 };
 
 const resolvePolicySelections = async (body, complaint, settings) => {
   const categoryId = settings.grievanceSubmission.allowCitizenCategorySelection
-    ? getPositiveId(body, "category_id") : null;
+    ? getPositiveId(body.category_id, "category") : null;
   const submittedDepartmentId = settings.grievanceSubmission.allowCitizenDepartmentSelection
-    ? getPositiveId(body, "department_id") : null;
-  const locationId = getPositiveId(body, "location_id");
+    ? getPositiveId(body.department_id, "department") : null;
+  const locationId = getPositiveId(body.location_id, "location");
 
   if (settings.grievanceSubmission.allowCitizenCategorySelection && !categoryId) {
     throw buildClientError("Complaint category is required");
@@ -236,37 +219,37 @@ const validateAllowedValues = (values, allowed, label) => {
 const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
   const submissionPolicy = settings.grievanceSubmission;
   const privacyPolicy = settings.privacy;
-  const assistance = getStringArray(body, "assistance");
-  const assistanceOther = getString(body, "assistance_other");
-  const submissionType = getString(body, "submission_type") || "named";
-  const compName = getString(body, "comp_name");
-  const compPhone = getString(body, "comp_phone");
-  const compAddress = getString(body, "comp_address");
-  const compEmail = getString(body, "comp_email");
-  const identificationNumber = getString(body, "identification_number");
-  const contactPreference = getString(body, "contact_pref");
-  const onBehalf = getString(body, "on_behalf");
-  const affectedName = getString(body, "affected_name");
-  const relationship = getString(body, "relationship");
-  const permission = getString(body, "permission");
-  const issueTypes = getStringArray(body, "issue_type");
-  const issueOther = getString(body, "issue_other");
-  const channels = getStringArray(body, "channel");
-  const incidentDate = getString(body, "incident_date");
-  const incidentLocation = getString(body, "incident_location");
-  const description = getString(body, "description");
-  const desiredOutcome = getString(body, "desired_outcome");
-  const triedResolve = getString(body, "tried_resolve");
-  const previousAttempts = getString(body, "prev_attempts");
-  const hasDocuments = getString(body, "has_documents");
-  const hasWitnesses = getString(body, "has_witnesses");
-  const witnessName = getString(body, "witness_name");
-  const witnessPhone = getString(body, "witness_phone");
-  const accommodations = getStringArray(body, "accommodation");
-  const accommodationOther = getString(body, "accommodation_other");
+  const assistance = getStringArray(body.assistance);
+  const assistanceOther = getString(body.assistance_other);
+  const submissionType = getString(body.submission_type) || "named";
+  const compName = getString(body.comp_name);
+  const compPhone = getString(body.comp_phone);
+  const compAddress = getString(body.comp_address);
+  const compEmail = getString(body.comp_email);
+  const identificationNumber = getString(body.identification_number);
+  const contactPreference = getString(body.contact_pref);
+  const onBehalf = getString(body.on_behalf);
+  const affectedName = getString(body.affected_name);
+  const relationship = getString(body.relationship);
+  const permission = getString(body.permission);
+  const issueTypes = getStringArray(body.issue_type);
+  const issueOther = getString(body.issue_other);
+  const channels = getStringArray(body.channel);
+  const incidentDate = getString(body.incident_date);
+  const incidentLocation = getString(body.incident_location);
+  const description = getString(body.description);
+  const desiredOutcome = getString(body.desired_outcome);
+  const triedResolve = getString(body.tried_resolve);
+  const previousAttempts = getString(body.prev_attempts);
+  const hasDocuments = getString(body.has_documents);
+  const hasWitnesses = getString(body.has_witnesses);
+  const witnessName = getString(body.witness_name);
+  const witnessPhone = getString(body.witness_phone);
+  const accommodations = getStringArray(body.accommodation);
+  const accommodationOther = getString(body.accommodation_other);
   const declarationConfirmed = getBoolean(body.declaration_confirm);
-  const signature = getString(body, "signature");
-  const declarationDate = getString(body, "declaration_date");
+  const signature = getString(body.signature);
+  const declarationDate = getString(body.declaration_date);
 
   validateAllowedValues(assistance, ALLOWED_ASSISTANCE, "assistance option");
   if (assistance.length > 1) {
@@ -497,7 +480,7 @@ const submitComplaint = async (req, res) => {
   try {
     const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
     if (settings.grievanceSubmission.enableCaptcha) {
-      const captchaToken = getString(req.body, "captchaToken") || getString(req.body, "captcha_token");
+      const captchaToken = getString(req.body.captchaToken) || getString(req.body.captcha_token);
       if (!captchaToken) throw buildClientError("Complete the CAPTCHA verification");
       let captchaValid;
       try {
@@ -584,13 +567,10 @@ const submitAdminComplaint = async (req, res) => {
       validateGrievanceBody(req.body, settings),
       settings,
     );
-    const receivedDate = getString(req.body, "office_received_date");
-    const receivedBy = getString(req.body, "office_received_by");
-    const classification = getString(
-      req.body,
-      "office_initial_classification",
-    );
-    const assignedTo = getString(req.body, "office_assigned_to");
+    const receivedDate = getString(req.body.office_received_date);
+    const receivedBy = getString(req.body.office_received_by);
+    const classification = getString(req.body.office_initial_classification);
+    const assignedTo = getString(req.body.office_assigned_to);
 
     if (!receivedDate || !isValidIsoDate(receivedDate)) {
       throw buildClientError("A valid office received date is required");
@@ -735,13 +715,13 @@ const getComplaintStatus = async (req, res) => {
   try {
     const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
     const method = settings.ticket.trackingVerificationMethod;
-    const tokenNumber = getString(req.body, "tokenNumber").toUpperCase();
+    const tokenNumber = getString(req.body.tokenNumber).toUpperCase();
     const contactDetail =
-      getString(req.body, "verificationDetail") ||
-      getString(req.body, "contactDetail") ||
-      getString(req.body, "phoneNumber") ||
-      getString(req.body, "emailAddress") ||
-      getString(req.body, "identificationNumber");
+      getString(req.body.verificationDetail) ||
+      getString(req.body.contactDetail) ||
+      getString(req.body.phoneNumber) ||
+      getString(req.body.emailAddress) ||
+      getString(req.body.identificationNumber);
 
     if (!tokenNumber || (method !== "Ticket Number Only" && !contactDetail)) {
       return res.status(400).json({
