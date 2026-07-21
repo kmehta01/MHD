@@ -1,7 +1,8 @@
 import LoopSlider from "../components/LoopSlider";
-import { Link } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 
 function Home() {
+  const { settings } = useOutletContext();
   return (
     <main>
       <section className="landing-hero">
@@ -11,18 +12,8 @@ function Home() {
               <span className="landing-hero__mark" aria-hidden="true"></span>
               Official Government Ministry
             </p>
-            <h1>
-              Empowering People.
-              <br />
-              Strengthening Families.
-              <br />
-              Advancing Equality in Belize.
-            </h1>
-            <p className="landing-hero__summary">
-              Access social assistance, family support, child protection,
-              community rehabilitation, gender-based violence support, economic
-              empowerment and disability services across Belize.
-            </p>
+            <h1>{settings.portal.portalTitle}</h1>
+            <p className="landing-hero__summary">{settings.portal.portalSubtitle}</p>
             <div className="landing-hero__actions">
               <a className="landing-hero__button" href="#service-navigator">
                 Find Support

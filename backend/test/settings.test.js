@@ -78,7 +78,7 @@ test("General Settings validates and normalizes supported fields", () => {
           organizationName: "  Government of Belize  ",
           settingsUploadMaxKb: 1024,
         },
-        ticket: { ticketPrefix: "GRM-TEST" },
+        grievanceSubmission: { maximumAttachmentCount: 4 },
       },
       reason: "Policy update",
     },
@@ -92,7 +92,7 @@ test("General Settings validates and normalizes supported fields", () => {
 
   assert.equal(continued, true);
   assert.equal(req.validatedSettings.organization.organizationName, "Government of Belize");
-  assert.equal(req.validatedSettings.ticket.ticketPrefix, "GRM-TEST");
+  assert.equal(req.validatedSettings.grievanceSubmission.maximumAttachmentCount, 4);
 });
 
 test("General Settings rejects unsafe and unknown fields", () => {

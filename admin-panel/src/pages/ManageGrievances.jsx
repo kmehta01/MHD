@@ -4,17 +4,6 @@ import Icon from "../components/Icon";
 import API from "../services/api";
 import { downloadBlob } from "../utils/download";
 
-const statuses = [
-  "New",
-  "Under Review",
-  "In Progress",
-  "Pending Information",
-  "Resolved",
-  "Closed",
-  "Rejected",
-  "Duplicate",
-];
-const priorities = ["Low", "Medium", "High"];
 const viewFilters = {
   new: { status: "New" },
   "under-review": { status: "Under Review" },
@@ -127,6 +116,14 @@ const ManageGrievances = () => {
   const [loading, setLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState(null);
   const [error, setError] = useState("");
+  const [options, setOptions] = useState({ statuses: [], priorities: [], transitions: [], departments: [], officers: [], policy: null });
+  const [lifecycle, setLifecycle] = useState(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [assignmentForm, setAssignmentForm] = useState({ departmentId: "", officerId: "", priority: "", note: "" });
+  const [statusForm, setStatusForm] = useState({ status: "", comment: "", resolutionSummary: "" });
+  const [statusDocument, setStatusDocument] = useState(null);
+  const [comment, setComment] = useState("");
+  const [dueDateForm, setDueDateForm] = useState({ dueAt: "", reason: "" });
   const requestedComplaintId = Number(searchParams.get("complaint"));
   const selectedId =
     Number.isInteger(requestedComplaintId) && requestedComplaintId > 0
@@ -138,6 +135,16 @@ const ManageGrievances = () => {
     detailLoadedId !== selectedId;
   const selectedComplaint =
     loadedComplaint?.id === selectedId ? loadedComplaint : null;
+  const statuses = options.statuses.map((item) => item.name);
+  const priorities = options.priorities.map((item) => item.name);
+
+  useEffect(() => {
+    let active = true;
+    API.get("/complaints/options")
+      .then((response) => { if (active) setOptions(response.data.data); })
+      .catch((requestError) => { if (active) setError(requestError.response?.data?.message || "Failed to load workflow options"); });
+    return () => { active = false; };
+  }, []);
 
   const queryParams = useMemo(
     () => ({
@@ -206,13 +213,27 @@ const ManageGrievances = () => {
 
     let active = true;
 
-    API.get(`/complaints/${selectedId}`)
-      .then((response) => {
-        if (active) setSelectedComplaint(response.data.data);
+    Promise.all([
+      API.get(`/complaints/${selectedId}`),
+      API.get(`/complaints/${selectedId}/lifecycle`),
+    ])
+      .then(([detailResponse, lifecycleResponse]) => {
+        if (active) {
+          const detail = detailResponse.data.data;
+          setSelectedComplaint(detail);
+          setLifecycle(lifecycleResponse.data.data);
+          setAssignmentForm((current) => ({
+            ...current,
+            departmentId: String(detail.assignedDepartmentId || ""),
+            officerId: String(detail.assignedOfficerId || ""),
+            priority: detail.ticketPriority || "",
+          }));
+        }
       })
       .catch((requestError) => {
         if (active) {
           setSelectedComplaint(null);
+          setLifecycle(null);
           setError(
             requestError.response?.data?.message ||
               "Failed to load grievance details",
@@ -301,6 +322,63 @@ const ManageGrievances = () => {
     } finally {
       setDownloadingId(null);
     }
+  };
+
+  const runAction = async (request, successMessage) => {
+    try {
+      setActionBusy(true);
+      setError("");
+      await request();
+      const [detailResponse, lifecycleResponse] = await Promise.all([
+        API.get(`/complaints/${selectedId}`),
+        API.get(`/complaints/${selectedId}/lifecycle`),
+      ]);
+      setSelectedComplaint(detailResponse.data.data);
+      setLifecycle(lifecycleResponse.data.data);
+      refresh();
+      window.setTimeout(() => setError(""), 2500);
+      setError(successMessage);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || "The grievance action failed");
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const submitAssignment = (event) => {
+    event.preventDefault();
+    runAction(
+      () => API.post(`/complaints/${selectedId}/assignment`, assignmentForm),
+      "Grievance assignment updated.",
+    );
+  };
+
+  const submitStatus = (event) => {
+    event.preventDefault();
+    const payload = new FormData();
+    Object.entries(statusForm).forEach(([key, value]) => payload.append(key, value));
+    if (statusDocument) payload.append("attachments", statusDocument);
+    runAction(
+      () => API.post(`/complaints/${selectedId}/status`, payload),
+      "Grievance status updated.",
+    );
+  };
+
+  const submitComment = (event) => {
+    event.preventDefault();
+    runAction(
+      () => API.post(`/complaints/${selectedId}/comments`, { comment }),
+      "Internal comment added.",
+    );
+    setComment("");
+  };
+
+  const submitDueDate = (event) => {
+    event.preventDefault();
+    runAction(
+      () => API.post(`/complaints/${selectedId}/due-date`, dueDateForm),
+      "Due-date action submitted.",
+    );
   };
 
   const grievanceData = selectedComplaint?.grievanceData;
@@ -770,6 +848,68 @@ const ManageGrievances = () => {
                   </dl>
                 </>
               ) : null}
+
+              <div className="grievance-lifecycle-actions">
+                <h3>Assignment and workflow</h3>
+                {options.policy?.assignment?.allowAdminAssignment ? (
+                  <form className="grievance-action-form" onSubmit={submitAssignment}>
+                    <strong>Assignment</strong>
+                    <select onChange={(event) => setAssignmentForm((current) => ({ ...current, departmentId: event.target.value, officerId: "" }))} required value={assignmentForm.departmentId}>
+                      <option value="">Select department</option>
+                      {options.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}
+                    </select>
+                    <select onChange={(event) => setAssignmentForm((current) => ({ ...current, officerId: event.target.value }))} required={options.policy.assignment.departmentOfficerSelectionRequired} value={assignmentForm.officerId}>
+                      <option value="">No specific officer</option>
+                      {options.officers.filter((officer) => String(officer.department_id) === String(assignmentForm.departmentId)).map((officer) => <option key={officer.id} value={officer.id}>{officer.name}</option>)}
+                    </select>
+                    <select onChange={(event) => setAssignmentForm((current) => ({ ...current, priority: event.target.value }))} required value={assignmentForm.priority}>
+                      <option value="">Select priority</option>
+                      {priorities.map((item) => <option key={item}>{item}</option>)}
+                    </select>
+                    <textarea onChange={(event) => setAssignmentForm((current) => ({ ...current, note: event.target.value }))} placeholder="Assignment note" required={options.policy.assignment.internalAssignmentNoteRequired} value={assignmentForm.note} />
+                    <button className="button button-secondary" disabled={actionBusy} type="submit">Save assignment</button>
+                  </form>
+                ) : null}
+
+                <form className="grievance-action-form" onSubmit={submitStatus}>
+                  <strong>Status transition</strong>
+                  <select onChange={(event) => setStatusForm((current) => ({ ...current, status: event.target.value }))} required value={statusForm.status}>
+                    <option value="">Select next status</option>
+                    {options.transitions.filter((transition) => transition.from_status === selectedComplaint.status).map((transition) => <option key={transition.id} value={transition.to_status}>{transition.to_status}</option>)}
+                  </select>
+                  <textarea onChange={(event) => setStatusForm((current) => ({ ...current, comment: event.target.value }))} placeholder="Status change comment" required={options.policy?.workflow?.requireCommentOnStatusChange} value={statusForm.comment} />
+                  {statusForm.status === "Resolved" ? <><textarea onChange={(event) => setStatusForm((current) => ({ ...current, resolutionSummary: event.target.value }))} placeholder="Resolution summary" required value={statusForm.resolutionSummary} /><input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx" onChange={(event) => setStatusDocument(event.target.files?.[0] || null)} required={options.policy?.workflow?.requireResolutionDocument} type="file" /></> : null}
+                  <button className="button button-primary" disabled={actionBusy || !statusForm.status} type="submit">Update status</button>
+                </form>
+
+                {options.policy?.dueDate?.dueDateRequired ? (
+                  <form className="grievance-action-form" onSubmit={submitDueDate}>
+                    <strong>Due-date extension</strong>
+                    <input min={new Date().toISOString().slice(0, 10)} onChange={(event) => setDueDateForm((current) => ({ ...current, dueAt: event.target.value }))} required type="date" value={dueDateForm.dueAt} />
+                    <textarea onChange={(event) => setDueDateForm((current) => ({ ...current, reason: event.target.value }))} placeholder="Reason for due-date change" required value={dueDateForm.reason} />
+                    <button className="button button-secondary" disabled={actionBusy} type="submit">Submit due-date action</button>
+                  </form>
+                ) : null}
+
+                <form className="grievance-action-form" onSubmit={submitComment}>
+                  <strong>Internal comment</strong>
+                  <textarea onChange={(event) => setComment(event.target.value)} placeholder="Visible only to authorized administrators" required value={comment} />
+                  <button className="button button-secondary" disabled={actionBusy || !comment.trim()} type="submit">Add comment</button>
+                </form>
+              </div>
+
+              <div className="grievance-lifecycle-history">
+                <h3>Lifecycle history</h3>
+                {!lifecycle?.statusHistory?.length && !lifecycle?.assignmentHistory?.length && !lifecycle?.comments?.length ? <p>No lifecycle activity recorded yet.</p> : (
+                  <ul>
+                    {(lifecycle?.statusHistory || []).map((item) => <li key={`status-${item.id}`}><strong>{item.from_status || "Created"} → {item.to_status}</strong><span>{item.comment || "Status updated"}</span><small>{formatBelizeDate(item.created_at)} · {item.changed_by_name || "System"}</small></li>)}
+                    {(lifecycle?.assignmentHistory || []).map((item) => <li key={`assignment-${item.id}`}><strong>Assigned to {item.to_department || "Unassigned"}</strong><span>{item.note || item.assignment_source}</span><small>{formatBelizeDate(item.created_at)} · {item.assigned_by_name || "Automatic routing"}</small></li>)}
+                    {(lifecycle?.comments || []).map((item) => <li key={`comment-${item.id}`}><strong>Internal comment</strong><span>{item.comment}</span><small>{formatBelizeDate(item.created_at)} · {item.created_by_name || "Administrator"}</small></li>)}
+                  </ul>
+                )}
+                {(lifecycle?.reassignmentRequests || []).filter((item) => item.status === "pending").map((item) => <div className="grievance-pending-request" key={`reassign-${item.id}`}><strong>Reassignment requested: {item.requested_department}</strong><p>{item.reason}</p><button disabled={actionBusy} onClick={() => runAction(() => API.put(`/complaints/reassignment-requests/${item.id}`, { approved: true }), "Reassignment approved.")} type="button">Approve</button><button disabled={actionBusy} onClick={() => runAction(() => API.put(`/complaints/reassignment-requests/${item.id}`, { approved: false, note: "Request rejected by administrator" }), "Reassignment rejected.")} type="button">Reject</button></div>)}
+                {(lifecycle?.dueDateRequests || []).filter((item) => item.status === "pending").map((item) => <div className="grievance-pending-request" key={`due-${item.id}`}><strong>Due date requested: {formatBelizeDate(item.requested_due_at)}</strong><p>{item.reason}</p><button disabled={actionBusy} onClick={() => runAction(() => API.put(`/complaints/due-date-requests/${item.id}`, { approved: true }), "Due date approved.")} type="button">Approve</button><button disabled={actionBusy} onClick={() => runAction(() => API.put(`/complaints/due-date-requests/${item.id}`, { approved: false, note: "Request rejected by administrator" }), "Due date rejected.")} type="button">Reject</button></div>)}
+              </div>
 
               <div className="grievance-attachments">
                 <h3>Supporting Documents</h3>

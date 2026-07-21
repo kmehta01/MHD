@@ -46,6 +46,10 @@ const initialForm = (receivedBy = "") => ({
   comp_phone: "",
   comp_address: "",
   comp_email: "",
+  identification_number: "",
+  category_id: "",
+  department_id: "",
+  location_id: "",
   contact_pref: "",
   on_behalf: "",
   affected_name: "",
@@ -83,20 +87,6 @@ const assistanceOptions = [
   ["Large print", "Large print"],
 ];
 
-const issueOptions = [
-  ["social_welfare", "Social welfare or assistance"],
-  ["child_protection", "Child protection services"],
-  ["family_support", "Family support services"],
-  ["gbv_response", "Gender-based violence response"],
-  ["elderly_support", "Elderly support services"],
-  ["disability_services", "Disability services"],
-  ["staff_conduct", "Staff conduct or behaviour"],
-  ["corruption", "Corruption or unethical behaviour"],
-  ["service_delays", "Service delays"],
-  ["discrimination", "Discrimination"],
-  ["policy", "Policy implementation"],
-];
-
 const channelOptions = [
   ["in_person", "In person"],
   ["telephone", "Telephone"],
@@ -115,13 +105,16 @@ const accommodationOptions = [
   ["translation", "Language translation"],
 ];
 
-const allowedFileTypes = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-]);
+const fileTypeRegistry = {
+  PDF: { accept: ".pdf", mime: ["application/pdf"] },
+  DOC: { accept: ".doc", mime: ["application/msword"] },
+  DOCX: { accept: ".docx", mime: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] },
+  JPG: { accept: ".jpg", mime: ["image/jpeg"] },
+  JPEG: { accept: ".jpeg", mime: ["image/jpeg"] },
+  PNG: { accept: ".png", mime: ["image/png"] },
+  XLS: { accept: ".xls", mime: ["application/vnd.ms-excel"] },
+  XLSX: { accept: ".xlsx", mime: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] },
+};
 
 const steps = [
   ["Complainant", "Submission and contact information"],
@@ -141,8 +134,31 @@ const AdminGrievanceForm = () => {
   const [confirmation, setConfirmation] = useState(null);
   const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
+  const [policy, setPolicy] = useState(null);
+  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [] });
   const qrCanvasRef = useRef(null);
   const anonymous = form.submission_type === "anonymous";
+  const submissionPolicy = policy?.grievanceSubmission;
+  const allowedTypes = submissionPolicy?.allowedFileTypes || [];
+  const allowedMimeTypes = new Set(allowedTypes.flatMap((type) => fileTypeRegistry[type]?.mime || []));
+  const attachmentAccept = allowedTypes.map((type) => fileTypeRegistry[type]?.accept).filter(Boolean).join(",");
+  const maximumFiles = submissionPolicy
+    ? (submissionPolicy.allowMultipleAttachments ? submissionPolicy.maximumAttachmentCount : 1)
+    : 0;
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([API.get("/public/settings"), API.get("/public/catalog")])
+      .then(([settingsResponse, catalogResponse]) => {
+        if (!active) return;
+        setPolicy(settingsResponse.data.data);
+        setCatalog(catalogResponse.data.data);
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.message || "Runtime grievance settings could not be loaded.");
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     if (!confirmation?.tokenNumber || !qrCanvasRef.current) return undefined;
@@ -208,6 +224,7 @@ const AdminGrievanceForm = () => {
   };
 
   const validateStep = (stepNumber) => {
+    if (!submissionPolicy) return "Runtime grievance settings are unavailable. Submission is disabled.";
     if (stepNumber === 1 && !anonymous) {
       if (!form.comp_name.trim()) return "Enter the complainant's full name.";
       if (!form.contact_pref) return "Select a preferred contact method.";
@@ -216,6 +233,9 @@ const AdminGrievanceForm = () => {
       }
       if (form.contact_pref === "email" && !form.comp_email.trim()) return "Enter an email address.";
       if (form.comp_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.comp_email)) return "Enter a valid email address.";
+      if (submissionPolicy.mobileNumberRequired && form.comp_phone.replace(/\D/g, "").length < 7) return "Enter a valid mobile number.";
+      if (submissionPolicy.emailAddressRequired && !form.comp_email.trim()) return "Enter an email address.";
+      if (submissionPolicy.identificationNumberRequired && form.identification_number.replace(/[^a-z0-9]/gi, "").length < 4) return "Enter a valid identification number.";
       if (form.contact_pref === "mail" && !form.comp_address.trim()) return "Enter a mailing address.";
       if (!form.on_behalf) return "Select whether the complaint is being submitted on behalf of someone else.";
       if (form.on_behalf === "yes" && (!form.affected_name.trim() || !form.relationship.trim() || !form.permission)) {
@@ -224,12 +244,15 @@ const AdminGrievanceForm = () => {
     }
 
     if (stepNumber === 2) {
-      if (!form.issue_type.length && !form.issue_other.trim()) return "Select at least one issue or specify another issue.";
+      if (submissionPolicy.allowCitizenCategorySelection && !form.category_id) return "Select a complaint category.";
+      if (submissionPolicy.allowCitizenDepartmentSelection && !form.department_id) return "Select a department.";
+      if (!submissionPolicy.allowCitizenCategorySelection && !form.issue_other.trim()) return "Enter a complaint subject.";
       if (!form.channel.length) return "Select at least one submission channel.";
       if (!form.incident_date) return "Enter the incident date.";
       if (form.incident_date > today()) return "Incident date cannot be in the future.";
       if (!form.incident_location.trim()) return "Enter the incident location.";
       if (!form.description.trim()) return "Enter a detailed description.";
+      if (form.description.length > submissionPolicy.maximumDescriptionLength) return `Detailed description must be ${submissionPolicy.maximumDescriptionLength} characters or fewer.`;
       if (!form.desired_outcome.trim()) return "Enter the desired outcome.";
       if (!form.tried_resolve) return "Select whether the complainant tried to resolve the issue before.";
       if (form.tried_resolve === "yes" && !form.prev_attempts.trim()) return "Describe previous resolution attempts.";
@@ -238,16 +261,16 @@ const AdminGrievanceForm = () => {
     if (stepNumber === 3) {
       if (!form.has_documents) return "Select whether supporting documents are available.";
       if (!form.has_witnesses) return "Select whether there are witnesses.";
-      if (files.length > 3) return "Upload a maximum of three documents.";
-      if (files.some((file) => file.size > 5 * 1024 * 1024)) return "Each document must be 5 MB or smaller.";
-      if (files.some((file) => !allowedFileTypes.has(file.type))) return "Use PDF, DOC, DOCX, JPG, or PNG documents only.";
+      if (files.length > maximumFiles) return `Upload a maximum of ${maximumFiles} document${maximumFiles === 1 ? "" : "s"}.`;
+      if (files.some((file) => file.size > submissionPolicy.maximumAttachmentSizeMb * 1024 * 1024)) return `Each document must be ${submissionPolicy.maximumAttachmentSizeMb} MB or smaller.`;
+      if (files.some((file) => !allowedMimeTypes.has(file.type))) return `Use ${allowedTypes.join(", ")} documents only.`;
       if (form.has_documents === "yes" && !files.length) return "Attach at least one supporting document or select No.";
       if (form.has_witnesses === "yes" && !form.witness_name.trim()) return "Enter the witness name.";
       if (form.has_witnesses === "yes" && form.witness_phone.replace(/\D/g, "").length < 7) return "Enter a valid witness phone number.";
     }
 
     if (stepNumber === 4) {
-      if (!form.declaration_confirm) return "Confirm the declaration before submitting.";
+      if ((submissionPolicy.displayDeclarationCheckbox || policy.privacy.citizenConsentRequired) && !form.declaration_confirm) return "Confirm the declaration before submitting.";
       if (!anonymous && !form.signature.trim()) return "Enter the complainant's electronic signature.";
       if (!form.declaration_date) return "Enter the declaration date.";
       if (form.declaration_date > today()) return "Declaration date cannot be in the future.";
@@ -434,6 +457,7 @@ const AdminGrievanceForm = () => {
                   <label><span>Full name *</span><input autoComplete="name" name="comp_name" onChange={update} value={form.comp_name} /></label>
                   <label><span>Phone number</span><input autoComplete="tel" name="comp_phone" onChange={update} type="tel" value={form.comp_phone} /></label>
                   <label><span>Email address</span><input autoComplete="email" name="comp_email" onChange={update} type="email" value={form.comp_email} /></label>
+                  {submissionPolicy?.identificationNumberRequired ? <label><span>Identification number *</span><input name="identification_number" onChange={update} value={form.identification_number} /></label> : null}
                   <label><span>Mailing address</span><input autoComplete="street-address" name="comp_address" onChange={update} value={form.comp_address} /></label>
                   <label><span>Preferred contact method *</span><select name="contact_pref" onChange={update} value={form.contact_pref}><option value="">Select contact method</option><option value="phone">Phone</option><option value="email">Email</option><option value="mail">Mail</option><option value="in_person">In person</option><option value="whatsapp">WhatsApp</option></select></label>
                   <label><span>Submitting on behalf of someone? *</span><select name="on_behalf" onChange={update} value={form.on_behalf}><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
@@ -456,11 +480,12 @@ const AdminGrievanceForm = () => {
         {step === 2 ? (
           <section>
             <div className="admin-grievance-section-heading"><span>02</span><div><h2>Grievance details</h2><p>Describe the concern and the outcome being requested.</p></div></div>
-            <fieldset className="admin-grievance-fieldset">
-              <legend>Issue type *</legend>
-              <div className="admin-grievance-choice-grid">{issueOptions.map(([value, label]) => choice("issue_type", value, label, "checkbox"))}</div>
-            </fieldset>
-            <label className="admin-grievance-wide"><span>Other issue</span><input name="issue_other" onChange={update} placeholder="Specify another issue" value={form.issue_other} /></label>
+            <div className="admin-grievance-grid">
+              {submissionPolicy?.allowCitizenCategorySelection ? <label><span>Complaint category *</span><select name="category_id" onChange={update} value={form.category_id}><option value="">Select category</option>{catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
+              {submissionPolicy?.allowCitizenDepartmentSelection ? <label><span>Department *</span><select name="department_id" onChange={update} value={form.department_id}><option value="">Select department</option>{catalog.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label> : null}
+              <label><span>District or service location</span><select name="location_id" onChange={update} value={form.location_id}><option value="">Select location</option>{catalog.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+            </div>
+            <label className="admin-grievance-wide"><span>{submissionPolicy?.allowCitizenCategorySelection ? "Additional subject detail" : "Complaint subject *"}</span><input name="issue_other" onChange={update} placeholder="Briefly identify the issue" required={!submissionPolicy?.allowCitizenCategorySelection} value={form.issue_other} /></label>
             <fieldset className="admin-grievance-fieldset">
               <legend>How was the grievance received? *</legend>
               <div className="admin-grievance-choice-grid compact">{channelOptions.map(([value, label]) => choice("channel", value, label, "checkbox"))}</div>
@@ -469,7 +494,7 @@ const AdminGrievanceForm = () => {
               <label><span>Incident date *</span><input max={today()} name="incident_date" onChange={update} type="date" value={form.incident_date} /></label>
               <label><span>Incident location *</span><input name="incident_location" onChange={update} value={form.incident_location} /></label>
             </div>
-            <label className="admin-grievance-wide"><span>Detailed description *</span><textarea name="description" onChange={update} rows="5" value={form.description} /></label>
+            <label className="admin-grievance-wide"><span>Detailed description *</span><textarea maxLength={submissionPolicy?.maximumDescriptionLength} name="description" onChange={update} rows="5" value={form.description} /><small>{form.description.length} / {submissionPolicy?.maximumDescriptionLength || "-"} characters</small></label>
             <label className="admin-grievance-wide"><span>Desired outcome *</span><textarea name="desired_outcome" onChange={update} rows="3" value={form.desired_outcome} /></label>
             <div className="admin-grievance-grid">
               <label><span>Previously tried to resolve? *</span><select name="tried_resolve" onChange={update} value={form.tried_resolve}><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
@@ -483,7 +508,7 @@ const AdminGrievanceForm = () => {
             <div className="admin-grievance-section-heading"><span>03</span><div><h2>Supporting information</h2><p>Add documents, witness details and accessibility needs.</p></div></div>
             <div className="admin-grievance-grid">
               <label><span>Supporting documents available? *</span><select name="has_documents" onChange={(event) => { update(event); if (event.target.value === "no") setFiles([]); }} value={form.has_documents}><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
-              {form.has_documents === "yes" ? <label><span>Upload documents *</span><input accept=".pdf,.doc,.docx,.jpg,.jpeg,.png" multiple onChange={(event) => setFiles(Array.from(event.target.files || []))} type="file" /><small>Maximum 3 files, 5 MB each.</small></label> : null}
+              {form.has_documents === "yes" ? <label><span>Upload documents *</span><input accept={attachmentAccept} multiple={submissionPolicy?.allowMultipleAttachments} onChange={(event) => setFiles(Array.from(event.target.files || []))} type="file" /><small>Maximum {maximumFiles} file{maximumFiles === 1 ? "" : "s"}, {submissionPolicy?.maximumAttachmentSizeMb || "-"} MB each.</small></label> : null}
               <label><span>Are there witnesses? *</span><select name="has_witnesses" onChange={update} value={form.has_witnesses}><option value="">Select</option><option value="no">No</option><option value="yes">Yes</option></select></label>
             </div>
             {form.has_witnesses === "yes" ? <div className="admin-grievance-subsection"><h3>Witness information</h3><div className="admin-grievance-grid"><label><span>Witness name *</span><input name="witness_name" onChange={update} value={form.witness_name} /></label><label><span>Witness phone *</span><input name="witness_phone" onChange={update} type="tel" value={form.witness_phone} /></label></div></div> : null}
@@ -500,7 +525,7 @@ const AdminGrievanceForm = () => {
             <div className="admin-grievance-section-heading"><span>04</span><div><h2>Declaration and submission</h2><p>Confirm that the information recorded is accurate.</p></div></div>
             <div className="admin-grievance-review">
               <div><span>Submission</span><strong>{anonymous ? "Anonymous" : "Named"}</strong></div>
-              <div><span>Issue type</span><strong>{[...issueOptions.filter(([value]) => form.issue_type.includes(value)).map(([, label]) => label), form.issue_other].filter(Boolean).join(", ") || "Not selected"}</strong></div>
+              <div><span>Complaint category</span><strong>{catalog.categories.find((item) => String(item.id) === String(form.category_id))?.name || form.issue_other || "Not selected"}</strong></div>
               <div><span>Incident location</span><strong>{form.incident_location || "Not provided"}</strong></div>
               <div><span>Contact method</span><strong>{anonymous ? "No direct contact" : form.contact_pref || "Not selected"}</strong></div>
             </div>

@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const {
   generalSettingDefinitions,
 } = require("../utils/default-general-settings");
@@ -14,8 +15,36 @@ const backendEnvPath = path.join(backendRoot, ".env");
 const adminEnvPath = path.join(adminPanelRoot, ".env");
 const lockPath = path.join(backendRoot, "install.lock");
 const sqlPath = path.join(projectRoot, "database", "database.sql");
+const installMigrationPaths = [
+  path.join(projectRoot, "database", "migrations", "20260720_runtime_general_settings.sql"),
+  path.join(projectRoot, "database", "migrations", "20260720_grievance_lifecycle.sql"),
+  path.join(projectRoot, "database", "migrations", "20260720_operational_runtime.sql"),
+];
 
 const installerTables = [
+  "report_jobs",
+  "admin_notifications",
+  "notification_outbox",
+  "notification_templates",
+  "background_job_leases",
+  "complaint_resolution_documents",
+  "complaint_internal_comments",
+  "complaint_escalations",
+  "due_date_extension_requests",
+  "complaint_reassignment_requests",
+  "complaint_assignment_history",
+  "complaint_status_history",
+  "assignment_routing_rules",
+  "workflow_transitions",
+  "complaint_locations",
+  "complaint_categories",
+  "complaint_priorities",
+  "complaint_statuses",
+  "public_holidays",
+  "admin_sessions",
+  "ticket_number_setting_logs",
+  "ticket_sequences",
+  "ticket_number_settings",
   "complaint_attachments",
   "complaints",
   "admin_two_factor_recovery_codes",
@@ -178,7 +207,8 @@ const normalizeConfig = (input = {}) => {
         "MHD Belize Administration <no-reply@example.gov.bz>",
     ).trim(),
     recaptcha_secret_key: String(input.recaptcha_secret_key || "").trim(),
-    pii_encryption_key: String(input.pii_encryption_key || "").trim(),
+    recaptcha_site_key: String(input.recaptcha_site_key || "").trim(),
+    pii_encryption_key: String(input.pii_encryption_key || crypto.randomBytes(32).toString("hex")).trim(),
     complaint_token_prefix: String(input.complaint_token_prefix || "GRM").trim(),
     complaint_token_random_length: Number.parseInt(
       input.complaint_token_random_length || 7,
@@ -300,6 +330,12 @@ const runSchema = async (connection) => {
 
   const sql = fs.readFileSync(sqlPath, "utf8");
   await connection.query(sql);
+  for (const migrationPath of installMigrationPaths) {
+    if (!fs.existsSync(migrationPath)) {
+      throw new InstallerError("Required database migration not found", 500, { path: migrationPath });
+    }
+    await connection.query(fs.readFileSync(migrationPath, "utf8"));
+  }
 };
 
 const createSuperAdmin = async (connection, config) => {
@@ -318,13 +354,15 @@ const createSuperAdmin = async (connection, config) => {
 
   await connection.query(
     `INSERT INTO admin_users
-      (name, email, password, role_id, status)
-     VALUES (?, ?, ?, ?, 'active')
+      (name, email, password, role_id, status, password_changed_at, must_change_password)
+     VALUES (?, ?, ?, ?, 'active', NOW(), 0)
      ON DUPLICATE KEY UPDATE
       name = VALUES(name),
       password = VALUES(password),
       role_id = VALUES(role_id),
       status = 'active',
+      password_changed_at = NOW(),
+      must_change_password = 0,
       updated_at = NOW()`,
     [config.admin_name, config.admin_email, hashedPassword, roleId],
   );
@@ -382,6 +420,7 @@ const writeEnvironmentFiles = (config) => {
     SMTP_PASSWORD: config.smtp_password,
     SMTP_FROM: config.smtp_from,
     RECAPTCHA_SECRET_KEY: config.recaptcha_secret_key,
+    RECAPTCHA_SITE_KEY: config.recaptcha_site_key,
     PII_ENCRYPTION_KEY: config.pii_encryption_key,
     COMPLAINT_TOKEN_PREFIX: config.complaint_token_prefix.toUpperCase(),
     COMPLAINT_TOKEN_RANDOM_LENGTH: config.complaint_token_random_length,

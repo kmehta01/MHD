@@ -1,6 +1,6 @@
 import { Link, NavLink } from "react-router-dom";
 
-function Header() {
+function Header({ branding, language, onLanguageChange, settings, t }) {
   const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
   const splitNavClass = ({ isActive }) =>
     `nav-link main-navbar__split-link${isActive ? " active" : ""}`;
@@ -20,9 +20,9 @@ function Header() {
               className="header-topbar__emergency"
               aria-label="Emergency and social services contacts"
             >
-              <a
+              {branding?.officialPhone ? <a
                 className="header-topbar__hotline"
-                href="tel:+5018222161"
+                href={`tel:${branding.officialPhone.replace(/[^+\d]/g, "")}`}
                 aria-label="24/7 emergency and social services hotline"
               >
                 <span className="header-topbar__phone">
@@ -32,22 +32,27 @@ function Header() {
                   <span className="header-topbar__title">
                     24/7 Emergency &amp; Social Services Hotline
                   </span>
-                  <span className="header-topbar__subtitle">
-                    For domestic violence, child abuse, or urgent social welfare
-                    concerns
-                  </span>
+                  <span className="header-topbar__subtitle">{branding.officialPhone}</span>
                 </span>
-              </a>
+              </a> : null}
             </div>
 
-            <Link
+            {settings?.grievanceSubmission?.allowPublicSubmission ? <Link
               className="header-topbar__quick-link header-topbar__complaint-link"
               to="/submit-complaint"
               aria-label="Submit complaint ticket"
             >
               <i className="fa-regular fa-pen-to-square" aria-hidden="true"></i>
-              <span>Grievance Submission</span>
-            </Link>
+              <span>{t("grievanceSubmission")}</span>
+            </Link> : null}
+
+            <label className="header-language-selector">
+              <span>{t("language")}</span>
+              <select aria-label={t("language")} onChange={(event) => onLanguageChange(event.target.value)} value={language}>
+                <option value="English">{t("english")}</option>
+                <option value="Spanish">{t("spanish")}</option>
+              </select>
+            </label>
 
             <ul
               className="header-topbar__social"
@@ -84,10 +89,7 @@ function Header() {
       >
         <div className="container site-header__container">
           <Link className="navbar-brand main-navbar__brand" to="/">
-            <img
-              src="/assets/images/ministry-logo-footer.png"
-              alt="Ministry of Human Development, Family Support, and Gender Affairs"
-            />
+            {branding?.logo ? <img src={branding.logo} alt={branding.organizationName} /> : <strong>{branding.organizationShortName}</strong>}
           </Link>
 
           <button
@@ -106,25 +108,25 @@ function Header() {
             <ul className="navbar-nav main-navbar__nav ms-auto">
               <li className="nav-item">
                 <NavLink className={navClass} to="/" end>
-                  Home
+                  {t("home")}
                 </NavLink>
               </li>
 
               <li className="nav-item dropdown main-navbar__split-item">
                 <NavLink className={splitNavClass} to="/about-us">
-                  About Us
+                  {t("about")}
                 </NavLink>
               </li>
 
               <li className="nav-item dropdown main-navbar__split-item">
                 <NavLink className={splitNavClass} to="/leadership">
-                  Leadership
+                  {t("leadership")}
                 </NavLink>
               </li>
 
               <li className="nav-item dropdown main-navbar__mega-item main-navbar__split-item">
                 <NavLink className={splitNavClass} to="/departments">
-                  Departments
+                  {t("departments")}
                 </NavLink>
                 <button
                   className="nav-link dropdown-toggle main-navbar__split-toggle"
@@ -216,7 +218,7 @@ function Header() {
                   className={splitNavClass}
                   to="/submit-complaint"
                 >
-                  Apply for Services
+                  {t("apply")}
                 </NavLink>
                 <button
                   className="nav-link dropdown-toggle main-navbar__split-toggle"
@@ -228,7 +230,7 @@ function Header() {
                 <ul className="dropdown-menu">
                   <li>
                     <Link className="dropdown-item" to="/submit-complaint">
-                      Submit Complaint Ticket
+                      {t("submitTicket")}
                     </Link>
                   </li>
                   <li>

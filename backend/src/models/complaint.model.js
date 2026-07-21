@@ -1,4 +1,7 @@
 const db = require("../config/db");
+const { generateTicketNumber } = require("../services/ticket-number-generator.service");
+const { calculateDueAt } = require("../services/due-date.service");
+const { generalSettingsDefaults } = require("../utils/default-general-settings");
 
 const DEFAULT_TOKEN_PREFIX = "GRM";
 
@@ -34,44 +37,6 @@ const buildComplaintToken = ({
   return `${prefix}-${year}-${month}-${String(sequence).padStart(4, "0")}`;
 };
 
-const assignComplaintToken = async (connection, complaintId) => {
-  const date = new Date();
-  const { year, month } = getBelizeDateParts(date);
-  const period = `${year}-${month}`;
-
-  await connection.query(
-    `INSERT IGNORE INTO complaint_reference_sequences
-     (period, last_number)
-     VALUES (?, 0)`,
-    [period],
-  );
-
-  const [rows] = await connection.query(
-    `SELECT last_number
-     FROM complaint_reference_sequences
-     WHERE period = ?
-     FOR UPDATE`,
-    [period],
-  );
-
-  const sequence = Number(rows[0]?.last_number || 0) + 1;
-  const tokenNumber = buildComplaintToken({ date, sequence });
-
-  await connection.query(
-    `UPDATE complaint_reference_sequences
-     SET last_number = ?
-     WHERE period = ?`,
-    [sequence, period],
-  );
-
-  await connection.query(
-    `UPDATE complaints SET token_number = ? WHERE id = ?`,
-    [tokenNumber, complaintId],
-  );
-
-  return tokenNumber;
-};
-
 const normalizeLimit = (value, fallback = 25) =>
   Math.min(100, Math.max(1, Number.parseInt(value, 10) || fallback));
 
@@ -86,24 +51,27 @@ const createWithAttachments = async ({ complaint, attachments }) => {
 
     const grievance = complaint.grievanceData || {};
     const office = complaint.officeData || {};
+    const dueAt = await calculateDueAt({
+      startDate: complaint.submittedAt || new Date(),
+      settings: complaint.settings || generalSettingsDefaults,
+      executor: connection,
+    });
+    const generatedTicket = await generateTicketNumber({ transaction: connection });
+    const tokenNumber = generatedTicket.ticketNumber;
     const [result] = await connection.query(`INSERT INTO complaints SET ?`, [
       {
+        token_number: tokenNumber,
         ticket_priority: complaint.ticketPriority,
+        priority_id: complaint.priorityId || null,
+        status: complaint.initialStatus,
+        status_id: complaint.statusId || null,
+        category_id: complaint.categoryId || null,
+        location_id: complaint.locationId || null,
+        submitted_department_id: complaint.submittedDepartmentId || null,
+        assigned_department_id: complaint.assignedDepartmentId || null,
+        assigned_officer_id: complaint.assignedOfficerId || null,
         incident_date: complaint.incidentDate,
-        due_at: new Date(
-          Date.now() +
-            Math.max(
-              1,
-              Number.parseInt(
-                process.env.DEFAULT_GRIEVANCE_DUE_DAYS || "10",
-                10,
-              ) || 10,
-            ) *
-              24 *
-              60 *
-              60 *
-              1000,
-        ),
+        due_at: dueAt,
         assistance: grievance.assistance?.[0] || null,
         assistance_other: grievance.assistance_other,
         submission_type: grievance.submission_type || "named",
@@ -112,6 +80,9 @@ const createWithAttachments = async ({ complaint, attachments }) => {
         comp_phone_digits: complaint.phoneNumberDigits || null,
         comp_address: grievance.comp_address,
         comp_email: grievance.comp_email,
+        identification_number_encrypted: grievance.identification_number_encrypted,
+        identification_number_hash: grievance.identification_number_hash,
+        identification_number_last4: grievance.identification_number_last4,
         contact_pref: grievance.contact_pref,
         on_behalf: grievance.on_behalf,
         affected_name: grievance.affected_name,
@@ -146,7 +117,25 @@ const createWithAttachments = async ({ complaint, attachments }) => {
     ]);
 
     const complaintId = result.insertId;
-    const tokenNumber = await assignComplaintToken(connection, complaintId);
+
+    if (complaint.statusId) {
+      await connection.query(
+        `INSERT INTO complaint_status_history (complaint_id, from_status_id, to_status_id, comment, changed_by)
+         VALUES (?, NULL, ?, 'Initial grievance status', ?)`,
+        [complaintId, complaint.statusId, office.createdByAdminUserId || null],
+      );
+    }
+
+    if (complaint.assignedDepartmentId) {
+      await connection.query(
+        `INSERT INTO complaint_assignment_history
+         (complaint_id, from_department_id, to_department_id, assigned_officer_id, note, assigned_by, assignment_source)
+         VALUES (?, NULL, ?, ?, ?, ?, 'routing_rule')`,
+        [complaintId, complaint.assignedDepartmentId, complaint.assignedOfficerId || null,
+          complaint.routingRuleId ? `Applied routing rule ${complaint.routingRuleId}` : "Initial department selection",
+          office.createdByAdminUserId || null],
+      );
+    }
 
     for (const attachment of attachments) {
       await connection.query(
@@ -258,9 +247,11 @@ const findAll = async (filters, pagination) => {
       c.id, c.token_number, c.assigned_department_id, c.ticket_priority,
       c.status, c.submission_type, c.comp_name, c.comp_phone, c.comp_email,
       c.issue_type, c.issue_other, c.incident_location,
-      c.created_at, c.updated_at, d.name AS assigned_department_name
+      c.created_at, c.updated_at, d.name AS assigned_department_name,
+      cc.name AS category_name
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
+     LEFT JOIN complaint_categories cc ON cc.id=c.category_id
      ${clause}
      ORDER BY c.created_at DESC, c.id DESC
      LIMIT ? OFFSET ?`,
@@ -347,6 +338,7 @@ const findById = async (
       c.incident_date, c.status, c.assistance, c.assistance_other,
       c.submission_type, c.comp_name, c.comp_phone, c.comp_phone_digits,
       c.comp_address, c.comp_email, c.contact_pref, c.on_behalf,
+      c.identification_number_encrypted, c.identification_number_last4,
       c.affected_name, c.relationship, c.permission, c.issue_type,
       c.issue_other, c.channel, c.incident_location, c.description,
       c.desired_outcome, c.tried_resolve, c.prev_attempts, c.has_documents,
@@ -355,10 +347,16 @@ const findById = async (
       c.declaration_date, c.intake_source, c.office_received_at,
       c.office_received_by, c.office_initial_classification,
       c.office_assigned_to, c.created_by_admin_user_id,
+      c.due_at, c.resolved_at, c.closed_at, c.resolution_summary,
+      c.assigned_officer_id, c.category_id, c.location_id,
       c.created_at, c.updated_at,
-      d.name AS assigned_department_name
+      d.name AS assigned_department_name, au.name AS assigned_officer_name,
+      cc.name AS category_name, cl.name AS location_name
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
+     LEFT JOIN admin_users au ON au.id=c.assigned_officer_id
+     LEFT JOIN complaint_categories cc ON cc.id=c.category_id
+     LEFT JOIN complaint_locations cl ON cl.id=c.location_id
      ${idClause}
      LIMIT 1`,
     [...values, id],
@@ -383,12 +381,16 @@ const findById = async (
 const findByToken = async (tokenNumber) => {
   const [complaints] = await db.query(
     `SELECT
-      id, token_number, ticket_priority, status, submission_type,
-      comp_name, comp_phone_digits, comp_address, comp_email,
-      issue_type, issue_other, incident_location,
-      created_at, updated_at
-     FROM complaints
-     WHERE token_number = ?
+      c.id, c.token_number, c.ticket_priority, c.status, c.submission_type,
+      c.comp_name, c.comp_phone_digits, c.comp_address, c.comp_email,
+      c.identification_number_hash, c.identification_number_last4,
+      c.issue_type, c.issue_other, c.incident_location, c.assigned_department_id,
+      c.resolution_summary, c.closed_at, c.created_at, c.updated_at,
+      d.name AS assigned_department_name, cc.name AS category_name
+     FROM complaints c
+     LEFT JOIN departments d ON d.id = c.assigned_department_id
+     LEFT JOIN complaint_categories cc ON cc.id=c.category_id
+     WHERE c.token_number = ?
      LIMIT 1`,
     [tokenNumber],
   );

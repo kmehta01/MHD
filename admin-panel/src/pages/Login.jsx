@@ -37,6 +37,11 @@ const Login = () => {
       return;
     }
 
+    if (data.user?.password_change_required) {
+      navigate("/profile", { replace: true });
+      return;
+    }
+
     navigate("/dashboard", { replace: true });
   };
 

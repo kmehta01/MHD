@@ -1,0 +1,67 @@
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import Icon from "../../../components/Icon";
+import SettingToggle from "../../../components/settings/SettingToggle";
+import FormatExamples from "../../../components/ticket-settings/FormatExamples";
+import ResetSequenceModal from "../../../components/ticket-settings/ResetSequenceModal";
+import SequenceStatusCard from "../../../components/ticket-settings/SequenceStatusCard";
+import TicketFormatBuilder from "../../../components/ticket-settings/TicketFormatBuilder";
+import TicketPreviewCard from "../../../components/ticket-settings/TicketPreviewCard";
+import TicketSettingsHistoryModal from "../../../components/ticket-settings/TicketSettingsHistoryModal";
+import UnsavedChangesModal from "../../../components/ticket-settings/UnsavedChangesModal";
+import useTicketNumberSettings from "../../../hooks/useTicketNumberSettings";
+
+const formatDate = (value) => value ? new Intl.DateTimeFormat("en-BZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "Not updated yet";
+
+const TicketNumberFormat = () => {
+  const navigate = useNavigate();
+  const state = useTicketNumberSettings();
+  const [reason, setReason] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [leaveOpen, setLeaveOpen] = useState(false);
+  const [pendingHref, setPendingHref] = useState("");
+  const [toast, setToast] = useState(null);
+  const readOnly = Boolean(state.meta?.capabilities?.read_only);
+
+  useEffect(() => { if (!toast) return undefined; const timer = window.setTimeout(() => setToast(null), 4500); return () => window.clearTimeout(timer); }, [toast]);
+  useEffect(() => { const listener = (event) => { if (!state.dirty) return; event.preventDefault(); event.returnValue = ""; }; window.addEventListener("beforeunload", listener); return () => window.removeEventListener("beforeunload", listener); }, [state.dirty]);
+  useEffect(() => {
+    const listener = (event) => {
+      if (!state.dirty || event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+      const anchor = event.target.closest?.("a[href]"); if (!anchor || anchor.target === "_blank") return;
+      const destination = new URL(anchor.href, window.location.href);
+      if (destination.origin !== window.location.origin || destination.pathname === window.location.pathname) return;
+      event.preventDefault(); event.stopPropagation(); setPendingHref(`${destination.pathname}${destination.search}${destination.hash}`); setLeaveOpen(true);
+    };
+    document.addEventListener("click", listener, true); return () => document.removeEventListener("click", listener, true);
+  }, [state.dirty]);
+
+  if (state.loading) return <div className="general-settings-loading" aria-label="Loading Ticket Number Format settings"><div className="settings-skeleton heading" /><div className="settings-skeleton-grid"><span /><span /><span /><span /></div></div>;
+  if (!state.settings) return <div className="general-settings-load-error"><Icon name="alert" size={28} /><h1>Ticket Number Format could not be loaded</h1><p>{state.error}</p><button className="button button-primary" onClick={state.load} type="button">Try again</button></div>;
+
+  const set = state.updateField;
+  const save = async () => { const result = await state.save(reason); setToast({ type: result.ok ? "success" : "error", text: result.message }); if (result.ok) setReason(""); };
+  const applyExample = (example) => { set("ticketFormat", example.format); Object.entries(example.toggles).forEach(([key, value]) => set(key, value)); };
+  const separatorPreset = ["-", "/", "_", ""].includes(state.settings.separator) ? state.settings.separator : "custom";
+
+  return <div className="general-settings-page ticket-settings-page">
+    {toast ? <div className={`settings-toast ${toast.type}`} role="status"><Icon name={toast.type === "success" ? "check" : "alert"} size={17} /><span>{toast.text}</span><button aria-label="Dismiss" onClick={() => setToast(null)} type="button"><Icon name="close" size={15} /></button></div> : null}
+    <header className="general-settings-page-header"><div><div className="settings-breadcrumb"><span>System Settings</span><Icon name="chevronRight" size={13} /><strong>Ticket Number Format</strong></div><h1>Ticket Number Format</h1><p>Control the permanent, globally unique reference assigned when a citizen submits a grievance.</p><div className="settings-updated-meta"><Icon name="clock" size={14} /> Last updated by <strong>{state.sequence?.updatedBy?.name || "System"}</strong> on {formatDate(state.sequence?.updatedAt)}</div></div><div className="general-settings-header-actions">{state.meta?.capabilities?.can_view_history ? <button className="button button-secondary" onClick={() => setHistoryOpen(true)} type="button"><Icon name="audit" size={16} /> View Change History</button> : null}{state.meta?.capabilities?.can_reset ? <button className="button button-secondary danger-outline" onClick={() => setResetOpen(true)} type="button"><Icon name="refresh" size={16} /> Reset Sequence</button> : null}</div></header>
+    {readOnly ? <div className="settings-readonly-banner"><Icon name="lock" size={18} /><div><strong>Read-only access</strong><span>You may review and preview this configuration. Only a Super Administrator can change it.</span></div></div> : null}
+    {state.error ? <div className="settings-inline-error"><Icon name="alert" size={17} /> {state.error}</div> : null}
+    <main className="ticket-settings-main">
+      <TicketPreviewCard preview={state.preview} previewing={state.previewing} settings={state.settings} />
+      <section className="settings-section-card"><header><span className="settings-section-icon"><Icon name="settings" size={19} /></span><div><h2>Basic settings</h2><p>Define the prefix, format, and automatic generation behavior.</p></div></header><div className="ticket-settings-form-grid"><div className="ticket-field-full"><SettingToggle checked={state.settings.autoGenerate} disabled={readOnly} help="Required for grievance submission because no authorized manual-ticket workflow is configured." id="ticket-auto" label="Auto-Generate Ticket Number" onChange={(value) => set("autoGenerate", value)} /></div><label><span>Ticket Prefix <b>*</b></span><input aria-invalid={Boolean(state.fieldErrors.ticketPrefix)} disabled={readOnly} maxLength="20" onChange={(event) => set("ticketPrefix", event.target.value)} value={state.settings.ticketPrefix} />{state.fieldErrors.ticketPrefix ? <small className="settings-field-error">{state.fieldErrors.ticketPrefix}</small> : <small>2–20 letters, numbers, or hyphens.</small>}</label><label><span>Letter Case</span><select disabled={readOnly} onChange={(event) => set("letterCase", event.target.value)} value={state.settings.letterCase}><option value="uppercase">Uppercase</option><option value="lowercase">Lowercase</option><option value="preserve">Preserve Original</option></select></label><div className="ticket-field-full"><TicketFormatBuilder disabled={readOnly} error={state.fieldErrors.ticketFormat} onChange={(value) => set("ticketFormat", value)} value={state.settings.ticketFormat} /></div><label><span>Separator</span><select disabled={readOnly} onChange={(event) => set("separator", event.target.value === "custom" ? "" : event.target.value)} value={separatorPreset}><option value="-">Hyphen (-)</option><option value="/">Slash (/)</option><option value="_">Underscore (_)</option><option value="">No Separator</option><option value="custom">Custom</option></select></label>{separatorPreset === "custom" ? <label><span>Custom Separator</span><input disabled={readOnly} maxLength="3" onChange={(event) => set("separator", event.target.value)} value={state.settings.separator} />{state.fieldErrors.separator ? <small className="settings-field-error">{state.fieldErrors.separator}</small> : null}</label> : <div />}</div></section>
+      <section className="settings-section-card"><header><span className="settings-section-icon"><Icon name="database" size={19} /></span><div><h2>Date and reference segments</h2><p>Enable only variables that are available at the moment of submission.</p></div></header><div className="ticket-toggle-grid"><SettingToggle checked={state.settings.includeYear} disabled={readOnly} id="ticket-year" label="Include Year" onChange={(value) => set("includeYear", value)} /><SettingToggle checked={state.settings.includeMonth} disabled={readOnly} id="ticket-month" label="Include Month" onChange={(value) => set("includeMonth", value)} /><SettingToggle checked={state.settings.includeDay} disabled={readOnly} id="ticket-day" label="Include Day" onChange={(value) => set("includeDay", value)} /><SettingToggle checked={state.settings.includeDepartmentCode} disabled={readOnly} help="Department assignment may happen after submission; use only a unique master-table code." id="ticket-department" label="Include Department Code" onChange={(value) => set("includeDepartmentCode", value)} /><SettingToggle checked={state.settings.includeLocationCode} disabled={readOnly} id="ticket-location" label="Include Location Code" onChange={(value) => set("includeLocationCode", value)} /><SettingToggle checked={state.settings.includeCategoryCode} disabled={readOnly} id="ticket-category" label="Include Category Code" onChange={(value) => set("includeCategoryCode", value)} /></div>{state.settings.includeYear ? <label className="ticket-inline-control"><span>Year format</span><select disabled={readOnly} onChange={(event) => set("yearFormat", event.target.value)} value={state.settings.yearFormat}><option value="four_digit">4 Digit Year (2026)</option><option value="two_digit">2 Digit Year (26)</option></select></label> : null}</section>
+      <section className="settings-section-card"><header><span className="settings-section-icon"><Icon name="activity" size={19} /></span><div><h2>Sequence rules</h2><p>The current sequence is locked and incremented atomically by the backend.</p></div></header><div className="ticket-settings-form-grid"><label><span>Sequence Length</span><input disabled={readOnly} max="12" min="4" onChange={(event) => set("sequenceLength", Number(event.target.value))} type="number" value={state.settings.sequenceLength} />{state.fieldErrors.sequenceLength ? <small className="settings-field-error">{state.fieldErrors.sequenceLength}</small> : null}</label><label><span>Starting Sequence</span><input disabled={readOnly} max="999999999999" min="1" onChange={(event) => set("startingSequence", Number(event.target.value))} type="number" value={state.settings.startingSequence} />{state.fieldErrors.startingSequence ? <small className="settings-field-error">{state.fieldErrors.startingSequence}</small> : <small>Use Reset Sequence after generation has begun.</small>}</label><label><span>Sequence Reset</span><select disabled={readOnly} onChange={(event) => set("sequenceReset", event.target.value)} value={state.settings.sequenceReset}><option value="never">Never</option><option value="daily">Daily</option><option value="monthly">Monthly</option><option value="yearly">Yearly</option></select></label><div><SettingToggle checked={state.settings.sequencePadding} disabled={readOnly} help="Pad with leading zeroes to the configured sequence length." id="ticket-padding" label="Sequence Padding" onChange={(value) => set("sequencePadding", value)} /></div></div></section>
+      <SequenceStatusCard sequence={state.sequence} /><FormatExamples disabled={readOnly} onApply={applyExample} />
+    </main>
+    {!readOnly ? <div className="settings-save-bar"><label><span>Change note <small>Optional · included in history</small></span><input maxLength="500" onChange={(event) => setReason(event.target.value)} placeholder="Briefly explain this update" value={reason} /></label><div><span className={state.dirty ? "settings-unsaved active" : "settings-unsaved"}>{state.dirty ? "Unsaved changes" : "All changes saved"}</span><button className="button button-secondary" disabled={!state.dirty || state.saving} onClick={state.discardChanges} type="button">Reset Changes</button><button className="button button-primary" disabled={!state.dirty || state.saving || !state.preview} onClick={save} type="button"><Icon name="check" size={16} /> {state.saving ? "Saving…" : "Save Changes"}</button></div></div> : null}
+    <ResetSequenceModal onClose={(result) => { setResetOpen(false); if (result?.ok) setToast({ type: "success", text: result.message }); }} onReset={state.resetSequence} open={resetOpen} saving={state.saving} sequence={state.sequence} settings={state.settings} />
+    <TicketSettingsHistoryModal onClose={() => setHistoryOpen(false)} open={historyOpen} />
+    <UnsavedChangesModal onDiscard={() => { const destination = pendingHref; state.discardChanges(); setLeaveOpen(false); setPendingHref(""); navigate(destination); }} onKeepEditing={() => { setLeaveOpen(false); setPendingHref(""); }} open={leaveOpen} />
+  </div>;
+};
+
+export default TicketNumberFormat;

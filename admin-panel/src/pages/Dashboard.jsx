@@ -548,6 +548,26 @@ const Dashboard = () => {
           />
         </ChartCard>
         ) : null}
+
+        {charts.recent_activity ? (
+        <ChartCard
+          description={`Most recently created or updated grievances in ${meta.dashboard_period || "the configured period"}.`}
+          title="Recent activity"
+          wide
+        >
+          {charts.recent_activity.length ? (
+            <div className="dashboard-recent-activity">
+              {charts.recent_activity.map((item) => (
+                <Link key={item.id} to={`/grievances/${item.id}`}>
+                  <strong>{item.token_number}</strong>
+                  <span>{item.status} · {item.priority} · {item.department}</span>
+                  <time>{formatGeneratedAt(item.occurred_at)}</time>
+                </Link>
+              ))}
+            </div>
+          ) : <p>No recent grievance activity.</p>}
+        </ChartCard>
+        ) : null}
       </section>
       ) : null}
 

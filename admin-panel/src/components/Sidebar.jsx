@@ -156,7 +156,7 @@ const filterNavigationByPermissions = (navigation) =>
     })
     .filter(Boolean);
 
-const Sidebar = ({ isOpen, onClose, onLogout }) => {
+const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
   const location = useLocation();
   const superAdmin = isSuperAdmin();
   const admin = isAdmin();
@@ -216,9 +216,9 @@ const Sidebar = ({ isOpen, onClose, onLogout }) => {
         <div className="sidebar-brand">
           <div className="brand-logo-shell">
             <img
-              alt="Ministry of Human Development, Family Support and Gender Affairs"
+              alt={branding?.organizationName || "Ministry of Human Development, Family Support and Gender Affairs"}
               className="brand-logo"
-              src="/assets/images/ministry-logo-footer.png"
+              src={branding?.logo || "/assets/images/ministry-logo-footer.png"}
             />
           </div>
 

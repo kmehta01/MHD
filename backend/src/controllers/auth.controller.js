@@ -1,4 +1,5 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const { getJwtSecret } = require("../config/jwt");
@@ -6,8 +7,9 @@ const AuthModel = require("../models/auth.model");
 const TwoFactorModel = require("../models/two-factor.model");
 const {
   TWO_FACTOR_LIMITS,
-  isTwoFactorEnforced,
 } = require("../config/two-factor");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { getPasswordPolicyErrors } = require("../services/password-policy.service");
 const { sendLoginOtp } = require("../services/mail.service");
 const { recordAuthEvent } = require("../services/auth-audit.service");
 const { runAuditedMutation } = require("../services/audit-log.service");
@@ -88,13 +90,29 @@ const validateChallenge = async (challengeToken) => {
   return { challenge };
 };
 
-const createSession = async (user, twoFactorVerified) => {
+const createSession = async (user, twoFactorVerified, req) => {
+  const settings = await SettingsPolicy.getPolicy();
   const permissions = await AuthModel.getActivePermissionsByRoleId(
     user.role_id,
   );
   const userPermissions = permissions.map((item) => item.permission_key);
-  const twoFactorEnforced = isTwoFactorEnforced();
+  const twoFactorEnforced = settings.security.enableTwoFactorAuthentication;
   const userId = user.admin_user_id || user.id;
+  const sessionToken = crypto.randomUUID();
+  const sessionTimeoutMinutes = settings.security.sessionTimeoutMinutes;
+  const expiresAt = new Date(Date.now() + sessionTimeoutMinutes * 60 * 1000);
+
+  if (settings.security.restrictConcurrentLogin) {
+    await AuthModel.revokeOtherAdminSessions(userId, null, "concurrent_login");
+  }
+  await AuthModel.createAdminSession({
+    sessionToken,
+    userId,
+    twoFactorVerified,
+    ipAddress: String(req?.ip || req?.socket?.remoteAddress || "").replace(/^::ffff:/, "").slice(0, 45) || null,
+    userAgent: String(req?.get?.("user-agent") || "").slice(0, 500) || null,
+    expiresAt,
+  });
 
   const token = jwt.sign(
     {
@@ -106,15 +124,17 @@ const createSession = async (user, twoFactorVerified) => {
       department_id: user.department_id || null,
       permissions: userPermissions,
       two_factor_verified: twoFactorVerified,
+      jti: sessionToken,
     },
     getJwtSecret(),
     {
       algorithm: "HS256",
-      expiresIn: process.env.JWT_EXPIRES_IN || "1d",
+      expiresIn: `${sessionTimeoutMinutes}m`,
     },
   );
 
   await AuthModel.updateLastLogin(userId);
+  await AuthModel.clearFailedLogins(userId);
 
   return {
     token,
@@ -131,6 +151,7 @@ const createSession = async (user, twoFactorVerified) => {
       permissions: userPermissions,
       two_factor_verified: twoFactorVerified,
       two_factor_enforced: twoFactorEnforced,
+      password_change_required: Boolean(user.must_change_password),
     },
   };
 };
@@ -154,7 +175,8 @@ const getCurrentSession = async (req, res) =>
       created_at: req.user.created_at || null,
       permissions: req.user.permissions,
       two_factor_verified: req.user.two_factor_verified === true,
-      two_factor_enforced: isTwoFactorEnforced(),
+      two_factor_enforced: req.user.two_factor_enforced === true,
+      password_change_required: req.user.password_change_required === true,
     },
   });
 
@@ -227,7 +249,8 @@ const updateCurrentProfile = async (req, res) => {
         last_login: user.last_login || null,
         created_at: user.created_at || null,
         two_factor_verified: req.user.two_factor_verified === true,
-        two_factor_enforced: isTwoFactorEnforced(),
+        two_factor_enforced: req.user.two_factor_enforced === true,
+        password_change_required: req.user.password_change_required === true,
       },
     });
   } catch (error) {
@@ -286,7 +309,8 @@ const updateCurrentProfilePhoto = async (req, res) => {
         last_login: user.last_login || null,
         created_at: user.created_at || null,
         two_factor_verified: req.user.two_factor_verified === true,
-        two_factor_enforced: isTwoFactorEnforced(),
+        two_factor_enforced: req.user.two_factor_enforced === true,
+        password_change_required: req.user.password_change_required === true,
       },
     });
   } catch (error) {
@@ -311,10 +335,13 @@ const updateCurrentPassword = async (req, res) => {
       });
     }
 
-    if (newPassword.length < 8) {
+    const settings = await SettingsPolicy.getPolicy();
+    const passwordErrors = getPasswordPolicyErrors(newPassword, settings.security);
+    if (passwordErrors.length) {
       return res.status(400).json({
         status: false,
-        message: "New password must be at least 8 characters long",
+        message: passwordErrors[0],
+        errors: passwordErrors,
       });
     }
 
@@ -354,6 +381,7 @@ const updateCurrentPassword = async (req, res) => {
       (connection) =>
         AuthModel.updatePassword(req.user.id, hashedPassword, connection),
     );
+    await AuthModel.revokeAllAdminSessions(req.user.id, "password_change");
 
     return res.json({
       status: true,
@@ -399,6 +427,7 @@ const recordInvalidCode = async (req, challenge, method) => {
 
 const adminLogin = async (req, res) => {
   try {
+    const settings = await SettingsPolicy.getPolicy();
     const email = String(req.body.email || "").trim();
     const password = req.body.password;
 
@@ -431,6 +460,14 @@ const adminLogin = async (req, res) => {
       });
     }
 
+    if (user.locked_until && new Date(user.locked_until).getTime() > Date.now()) {
+      return res.status(423).json({
+        status: false,
+        code: "ACCOUNT_LOCKED",
+        message: "This account is temporarily locked. Please try again later.",
+      });
+    }
+
     if (!user.role_id || !user.role_slug || !user.role_is_active) {
       return res.status(403).json({
         status: false,
@@ -441,6 +478,11 @@ const adminLogin = async (req, res) => {
     const isPasswordValid = await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
+      await AuthModel.recordFailedLogin(
+        user.id,
+        settings.security.maximumLoginAttempts,
+        settings.security.accountLockDurationMinutes,
+      );
       await recordAuthEvent(req, {
         userId: user.id,
         eventType: "PASSWORD_LOGIN_FAILED",
@@ -453,8 +495,14 @@ const adminLogin = async (req, res) => {
       });
     }
 
-    if (!isTwoFactorEnforced()) {
-      const session = await createSession(user, false);
+    const passwordAgeDays = user.password_changed_at
+      ? (Date.now() - new Date(user.password_changed_at).getTime()) / 86400000
+      : Number.POSITIVE_INFINITY;
+    user.must_change_password = Boolean(user.must_change_password) ||
+      (settings.security.passwordExpiryDays > 0 && passwordAgeDays >= settings.security.passwordExpiryDays);
+
+    if (!settings.security.enableTwoFactorAuthentication) {
+      const session = await createSession(user, false, req);
 
       await recordAuthEvent(req, {
         userId: user.id,
@@ -467,6 +515,14 @@ const adminLogin = async (req, res) => {
         message: "Login successful",
         requires_two_factor: false,
         ...session,
+      });
+    }
+
+    if (!SettingsPolicy.isTwoFactorConfigured()) {
+      return res.status(503).json({
+        status: false,
+        code: "TWO_FACTOR_CONFIGURATION_ERROR",
+        message: "Two-factor authentication is enabled but its secure delivery service is unavailable.",
       });
     }
 
@@ -617,7 +673,7 @@ const verifyTwoFactor = async (req, res) => {
       });
     }
 
-    const session = await createSession(challenge, true);
+      const session = await createSession(challenge, true, req);
 
     await recordAuthEvent(req, {
       userId: challenge.admin_user_id,
@@ -644,6 +700,19 @@ const verifyTwoFactor = async (req, res) => {
       message: configurationError
         ? "Two-factor authentication is temporarily unavailable"
         : "Failed to verify the code",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
+const logout = async (req, res) => {
+  try {
+    if (req.user?.jti) await AuthModel.revokeAdminSession(req.user.jti, "logout");
+    return res.json({ status: true, message: "Signed out successfully" });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to sign out",
       error: process.env.NODE_ENV === "development" ? error.message : undefined,
     });
   }
@@ -768,6 +837,7 @@ const resendTwoFactorCode = async (req, res) => {
 module.exports = {
   adminLogin,
   getCurrentSession,
+  logout,
   resendTwoFactorCode,
   updateCurrentPassword,
   updateCurrentProfilePhoto,

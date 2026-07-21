@@ -67,3 +67,16 @@ WHERE r.slug = 'admin'
     WHERE legacy_rp.role_id = r.id
       AND legacy_p.permission_key = 'settings.view'
   );
+
+DELETE FROM system_settings
+WHERE setting_key IN (
+  'grievanceSubmission.citizenRegistrationRequired',
+  'ticket.autoGenerateTicketNumber',
+  'ticket.ticketPrefix',
+  'ticket.startingSequenceNumber',
+  'ticket.sequenceReset',
+  'notifications.enableSmsNotifications',
+  'notifications.enableWhatsappNotifications',
+  'security.auditUserLoginActivity',
+  'footer.applicationVersion'
+);

@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 
-function Footer() {
+function Footer({ settings, t }) {
+  const branding = settings?.organization || {};
+  const footer = settings?.footer || {};
   const disabledLinkProps = {
     href: '#',
     'aria-disabled': 'true',
@@ -22,18 +24,10 @@ function Footer() {
           <div className="site-footer__grid">
             <div className="site-footer__brand">
               <Link className="site-footer__logo-link" to="/">
-                <img
-                  className="site-footer__logo"
-                  src="/assets/images/ministry-logo-footer-white.png"
-                  alt="Ministry of Human Development, Family Support, and Gender Affairs"
-                />
+                {branding?.logo ? <img className="site-footer__logo" src={branding.logo} alt={branding.organizationName} /> : <strong>{branding.organizationShortName}</strong>}
               </Link>
 
-              <p className="site-footer__about">
-                Committed to protecting vulnerable persons, strengthening families,
-                promoting equality, and improving access to social services across
-                Belize.
-              </p>
+              <p className="site-footer__about">{footer.footerText || branding.organizationName}</p>
 
               <form
                 className="footer-newsletter"
@@ -54,32 +48,32 @@ function Footer() {
             <nav className="site-footer__column" aria-labelledby="footerQuickLinks">
               <h2 className="site-footer__heading" id="footerQuickLinks">
                 <i className="fa-solid fa-circle" aria-hidden="true"></i>
-                Quick Links
+                {t("quickLinks")}
               </h2>
 
               <ul className="site-footer__links">
                 <li>
                   <Link className="glow-link" to="/about-us">
                     <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    <span>About Us</span>
+                    <span>{t("about")}</span>
                   </Link>
                 </li>
                 <li>
                   <Link className="glow-link" to="/leadership">
                     <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    <span>Leadership</span>
+                    <span>{t("leadership")}</span>
                   </Link>
                 </li>
                 <li>
                   <Link className="glow-link" to="/departments">
                     <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    <span>Departments</span>
+                    <span>{t("departments")}</span>
                   </Link>
                 </li>
                 <li>
                   <a {...disabledGlowLinkProps}>
                     <i className="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    <span>Apply for Services</span>
+                    <span>{t("apply")}</span>
                   </a>
                 </li>
                 <li>
@@ -112,7 +106,7 @@ function Footer() {
             <nav className="site-footer__column" aria-labelledby="footerKeyServices">
               <h2 className="site-footer__heading" id="footerKeyServices">
                 <i className="fa-solid fa-circle" aria-hidden="true"></i>
-                Key Services
+                {t("keyServices")}
               </h2>
 
               <ul className="site-footer__links">
@@ -161,35 +155,26 @@ function Footer() {
             >
               <h2 className="site-footer__heading" id="footerContactInfo">
                 <i className="fa-solid fa-circle" aria-hidden="true"></i>
-                Contact Info
+                {t("contactInfo")}
               </h2>
 
               <address>
                 <div className="site-footer__contact-item">
-                  <span>Address</span>
-                  <p>
-                    West Block, Independence Plaza
-                    <br />
-                    Belmopan, Belize
-                  </p>
+                  <span>{t("address")}</span>
+                  <p>{[branding.officeAddress, branding.country].filter(Boolean).join(", ") || "Not provided"}</p>
                 </div>
 
                 <div className="site-footer__contact-item">
                   <span>Tel</span>
-                  <a className="glow-link" href="tel:+5018222161">
-                    (501) 822-2161
-                  </a>
+                  {branding.officialPhone || footer.supportPhone ? <a className="glow-link" href={`tel:${(branding.officialPhone || footer.supportPhone).replace(/[^+\d]/g, "")}`}>{branding.officialPhone || footer.supportPhone}</a> : <p>Not provided</p>}
                 </div>
 
                 <div className="site-footer__contact-item">
-                  <span>Email</span>
-                  <a
-                    className="glow-link"
-                    href="mailto:senior.secretary@humandev.gov.bz"
-                  >
-                    senior.secretary@humandev.gov.bz
-                  </a>
+                  <span>{t("email")}</span>
+                  {branding.officialEmail || footer.supportEmail ? <a className="glow-link" href={`mailto:${branding.officialEmail || footer.supportEmail}`}>{branding.officialEmail || footer.supportEmail}</a> : <p>Not provided</p>}
                 </div>
+                {footer.helpdeskWorkingHours ? <div className="site-footer__contact-item"><span>{t("hours")}</span><p>{footer.helpdeskWorkingHours}</p></div> : null}
+                {branding.websiteUrl ? <div className="site-footer__contact-item"><span>Website</span><a className="glow-link" href={branding.websiteUrl} rel="noreferrer" target="_blank">{branding.websiteUrl}</a></div> : null}
               </address>
             </section>
           </div>
@@ -199,19 +184,20 @@ function Footer() {
       <div className="site-footer__bottom">
         <div className="container">
           <div className="site-footer__bottom-inner">
-            <p>&copy;2026 TMedia Business Solution Pvt. Ltd. All rights reserved</p>
+            <p>&copy; {footer.copyrightYear} {footer.footerText || branding.organizationName}</p>
             <ul>
+              {footer.userGuideUrl ? <li><a className="glow-link" href={footer.userGuideUrl} rel="noreferrer" target="_blank">User guide</a></li> : null}
               <li>
-                <a {...disabledGlowLinkProps}>Privacy Policy</a>
+                {footer.privacyPolicyUrl ? <a className="glow-link" href={footer.privacyPolicyUrl} rel="noreferrer" target="_blank">{t("privacyPolicy")}</a> : <span>{t("privacyPolicy")}</span>}
               </li>
               <li>
-                <a {...disabledGlowLinkProps}>Terms of Use</a>
+                {footer.termsConditionsUrl ? <a className="glow-link" href={footer.termsConditionsUrl} rel="noreferrer" target="_blank">{t("terms")}</a> : <span>{t("terms")}</span>}
               </li>
               <li>
-                <a {...disabledGlowLinkProps}>Accessibility</a>
+                <a {...disabledGlowLinkProps}>{t("accessibility")}</a>
               </li>
               <li>
-                <a {...disabledGlowLinkProps}>Sitemap</a>
+                <a {...disabledGlowLinkProps}>{t("sitemap")}</a>
               </li>
             </ul>
           </div>

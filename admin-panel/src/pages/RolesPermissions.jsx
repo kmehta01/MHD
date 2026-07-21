@@ -22,6 +22,7 @@ const moduleLabels = {
   roles: "Roles & Permissions",
   settings: "System Settings",
   settings_general: "General Settings",
+  settings_ticket_number: "Ticket Number Format",
   users: "User Management",
 };
 

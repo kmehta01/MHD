@@ -121,7 +121,7 @@ export const superAdminNavigation = [
       },
       {
         name: "Ticket Number Format",
-        path: "/system-settings/ticket-number-format",
+        path: "/super-admin/settings/ticket-number-format",
       },
       {
         name: "Status Settings",

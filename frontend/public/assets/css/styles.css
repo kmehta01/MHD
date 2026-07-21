@@ -5484,3 +5484,40 @@ textarea {
     padding: 20px;
   }
 }
+.portal-state {
+  min-height: 52vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  padding: 4rem 1.5rem;
+  text-align: center;
+  color: #073b66;
+  background: #f4f9fc;
+}
+.portal-state > i { font-size: 2.5rem; color: #1681b8; }
+.portal-state h1, .portal-state p { margin: 0; max-width: 760px; }
+.portal-state__spinner { width: 42px; height: 42px; border: 4px solid #cfe6f2; border-top-color: #1681b8; border-radius: 50%; animation: portal-spin .8s linear infinite; }
+.grievance-captcha { margin-top: 1rem; min-height: 78px; }
+@keyframes portal-spin { to { transform: rotate(360deg); } }
+.header-language-selector {
+  align-items: center;
+  color: #fff;
+  display: flex;
+  font-size: .78rem;
+  gap: .45rem;
+  margin-left: auto;
+}
+
+.header-language-selector select {
+  background: rgba(255, 255, 255, .12);
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 5px;
+  color: #fff;
+  padding: .3rem .45rem;
+}
+
+.header-language-selector option {
+  color: #172033;
+}

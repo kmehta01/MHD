@@ -2,6 +2,9 @@ const {
   generalSettingsDefinitionMap,
   generalSettingsDefaults,
 } = require("../utils/default-general-settings");
+const SettingsService = require("../services/settings.service");
+const ConfigurationModel = require("../models/configuration.model");
+const SettingsPolicy = require("../services/settings-policy.service");
 
 const hasUnsafeMarkup = (value) =>
   /<\s*script\b|\bon\w+\s*=|javascript\s*:/i.test(value);
@@ -101,9 +104,36 @@ const validateConditionalRules = (settings, errors) => {
   if (settings.grievanceSubmission?.displayDeclarationCheckbox && !settings.grievanceSubmission?.declarationText) {
     errors["grievanceSubmission.declarationText"] = "Declaration text is required when the checkbox is displayed";
   }
+  if (settings.grievanceSubmission?.enableCaptcha &&
+      (!String(process.env.RECAPTCHA_SITE_KEY || "").trim() || !String(process.env.RECAPTCHA_SECRET_KEY || "").trim())) {
+    errors["grievanceSubmission.enableCaptcha"] = "Configure the reCAPTCHA site key and secret before enabling CAPTCHA";
+  }
+  if (!settings.grievanceSubmission?.allowedFileTypes?.length) {
+    errors["grievanceSubmission.allowedFileTypes"] = "Select at least one allowed attachment type";
+  }
+  const trackingMethod = settings.ticket?.trackingVerificationMethod;
+  if (trackingMethod === "Ticket Number and Phone Number" && !settings.grievanceSubmission?.mobileNumberRequired) {
+    errors["ticket.trackingVerificationMethod"] = "Phone verification requires mobile numbers on named submissions";
+  }
+  if (trackingMethod === "Ticket Number and Email Address" && !settings.grievanceSubmission?.emailAddressRequired) {
+    errors["ticket.trackingVerificationMethod"] = "Email verification requires email addresses on named submissions";
+  }
+  if (trackingMethod === "Ticket Number and Identification Number" && !settings.grievanceSubmission?.identificationNumberRequired) {
+    errors["ticket.trackingVerificationMethod"] = "Identification verification requires identification numbers on named submissions";
+  }
+  if (!settings.ticket?.displayTicketOnConfirmation &&
+      (!settings.ticket?.sendSubmissionAcknowledgement ||
+       !settings.notifications?.enableEmailNotifications ||
+       !settings.grievanceSubmission?.emailAddressRequired)) {
+    errors["ticket.displayTicketOnConfirmation"] = "A hidden ticket requires email acknowledgement and required email collection";
+  }
+  if (!settings.dueDate?.dueDateRequired &&
+      (settings.dueDate?.enableEscalation || settings.notifications?.notifyDueDateReminder || settings.notifications?.notifyOverdueGrievance)) {
+    errors["dueDate.dueDateRequired"] = "Due dates must be enabled for reminders, overdue notifications, or escalation";
+  }
 };
 
-const validateGeneralSettingsPayload = (req, res, next) => {
+const validateGeneralSettingsPayload = async (req, res, next) => {
   const input = req.body?.settings || req.body;
   const reason = normalizeString(req.body?.reason || "");
   const errors = {};
@@ -133,13 +163,35 @@ const validateGeneralSettingsPayload = (req, res, next) => {
     }
   }
 
-  const conditionSettings = Object.fromEntries(
-    Object.entries(generalSettingsDefaults).map(([group, values]) => [
-      group,
-      { ...values, ...(normalized[group] || {}) },
-    ]),
-  );
+  let currentSettings;
+  try { currentSettings = await SettingsService.getGeneralSettings(); }
+  catch (error) { return res.status(503).json({ status: false, message: "Current General Settings could not be loaded" }); }
+  const conditionSettings = Object.fromEntries(Object.entries(currentSettings).map(([group, values]) => [
+    group, { ...values, ...(normalized[group] || {}) },
+  ]));
   validateConditionalRules(conditionSettings, errors);
+  const capabilities = SettingsPolicy.getRuntimeCapabilities();
+  if (conditionSettings.security.enableTwoFactorAuthentication && !capabilities.twoFactor.configured) {
+    errors["security.enableTwoFactorAuthentication"] = "Configure two-factor encryption and SMTP before enabling two-factor authentication";
+  }
+  if (conditionSettings.notifications.enableEmailNotifications && !capabilities.email.configured) {
+    errors["notifications.enableEmailNotifications"] = "Configure SMTP before enabling email notifications";
+  }
+  if ((conditionSettings.grievanceSubmission.identificationNumberRequired ||
+       conditionSettings.ticket.trackingVerificationMethod === "Ticket Number and Identification Number") &&
+      !capabilities.pii.configured) {
+    errors["grievanceSubmission.identificationNumberRequired"] = "Configure PII encryption before collecting identification numbers";
+  }
+  if (conditionSettings.workflow.autoCloseResolvedGrievances) {
+    try {
+      const workflow = await ConfigurationModel.listWorkflow();
+      const validTransition = workflow.transitions.some((transition) =>
+        transition.is_active && transition.from_status === "Resolved" && transition.to_status === "Closed");
+      if (!validTransition) errors["workflow.autoCloseResolvedGrievances"] = "Auto-close requires an active Resolved to Closed transition";
+    } catch {
+      errors["workflow.autoCloseResolvedGrievances"] = "Workflow dependencies could not be verified";
+    }
+  }
   if (reason.length > 500) errors.reason = "Change reason must be 500 characters or fewer";
 
   if (Object.keys(errors).length) {

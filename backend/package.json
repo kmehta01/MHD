@@ -12,6 +12,10 @@
     "migrate:role-permissions": "node scripts/apply-role-permissions-migration.js",
     "migrate:profile-photo": "node scripts/apply-profile-photo-migration.js",
     "migrate:general-settings": "node scripts/apply-general-settings-migration.js",
+    "migrate:runtime-settings": "node scripts/apply-runtime-settings-migration.js",
+    "migrate:grievance-lifecycle": "node scripts/apply-grievance-lifecycle-migration.js",
+    "migrate:operational-runtime": "node scripts/apply-operational-runtime-migration.js",
+    "migrate:ticket-number": "node scripts/apply-ticket-number-migration.js",
     "verify:smtp": "node scripts/verify-smtp.js",
     "two-factor:break-glass": "node scripts/break-glass-recovery-codes.js",
     "test": "node --test"
@@ -28,12 +32,14 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.6.0",
     "express-validator": "^7.3.2",
+    "exceljs": "^4.4.0",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
     "morgan": "^1.11.0",
     "multer": "^2.2.0",
     "mysql2": "^3.23.1",
     "nodemailer": "^9.0.3",
+    "pdfkit": "^0.17.2",
     "ua-parser-js": "^2.0.10"
   },
   "devDependencies": {

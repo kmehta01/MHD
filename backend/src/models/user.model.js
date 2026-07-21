@@ -79,12 +79,14 @@ const create = async ({
   phone,
   password,
   status,
+  mustChangePassword,
 }, executor = db) => {
   const [result] = await executor.query(
     `INSERT INTO admin_users
-     (role_id, department_id, name, email, phone, password, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [roleId, departmentId, name, email, phone, password, status],
+     (role_id, department_id, name, email, phone, password, status,
+      password_changed_at, must_change_password)
+     VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)`,
+    [roleId, departmentId, name, email, phone, password, status, mustChangePassword ? 1 : 0],
   );
 
   return result;
@@ -140,12 +142,13 @@ const update = async (
   return result;
 };
 
-const updatePassword = async (id, password, executor = db) => {
+const updatePassword = async (id, password, executor = db, mustChangePassword = false) => {
   const [result] = await executor.query(
     `UPDATE admin_users
-     SET password = ?, updated_at = NOW()
+     SET password = ?, password_changed_at = NOW(), must_change_password = ?,
+         failed_login_attempts = 0, locked_until = NULL, updated_at = NOW()
      WHERE id = ?`,
-    [password, id],
+    [password, mustChangePassword ? 1 : 0, id],
   );
 
   return result;

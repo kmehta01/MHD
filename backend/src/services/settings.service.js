@@ -5,7 +5,6 @@ const {
   generalSettingsDefaults,
 } = require("../utils/default-general-settings");
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
 let generalSettingsCache = null;
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -38,11 +37,8 @@ const clearGeneralSettingsCache = () => {
 };
 
 const getGeneralSettings = async ({ bypassCache = false } = {}) => {
-  if (
-    !bypassCache &&
-    generalSettingsCache &&
-    generalSettingsCache.expiresAt > Date.now()
-  ) {
+  const version = await SettingsModel.findGeneralSettingsVersion();
+  if (!bypassCache && generalSettingsCache?.version === version) {
     return clone(generalSettingsCache.value);
   }
 
@@ -59,11 +55,24 @@ const getGeneralSettings = async ({ bypassCache = false } = {}) => {
   }
 
   generalSettingsCache = {
-    expiresAt: Date.now() + CACHE_TTL_MS,
+    version,
     value: clone(settings),
   };
   return settings;
 };
+
+const getPublicGeneralSettings = async () => {
+  const settings = await getGeneralSettings();
+  const publicSettings = {};
+  for (const definition of generalSettingDefinitions) {
+    if (!definition.isPublic) continue;
+    publicSettings[definition.group] ||= {};
+    publicSettings[definition.group][definition.key] = settings[definition.group][definition.key];
+  }
+  return publicSettings;
+};
+
+const getGeneralSettingsVersion = () => SettingsModel.findGeneralSettingsVersion();
 
 const getRequestContext = (req, reason) => ({
   userId: req.user.id,
@@ -180,6 +189,8 @@ const seedGeneralSettings = async (executor, userId = null) => {
 module.exports = {
   clearGeneralSettingsCache,
   getGeneralSettings,
+  getGeneralSettingsVersion,
+  getPublicGeneralSettings,
   getGeneralSettingsHistory,
   resetGeneralSettings,
   seedGeneralSettings,

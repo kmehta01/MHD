@@ -39,13 +39,13 @@ export const settingsSections = [
     fields: [
       { key: "allowPublicSubmission", label: "Allow Public Grievance Submission", type: "toggle" },
       { key: "allowAnonymousComplaints", label: "Allow Anonymous Complaints", type: "toggle" },
-      { key: "citizenRegistrationRequired", label: "Citizen Registration Required", type: "toggle" },
       { key: "mobileNumberRequired", label: "Mobile Number Required", type: "toggle" },
       { key: "emailAddressRequired", label: "Email Address Required", type: "toggle" },
       { key: "identificationNumberRequired", label: "Identification Number Required", type: "toggle" },
       { key: "allowCitizenDepartmentSelection", label: "Allow Citizen to Select Department", type: "toggle" },
       { key: "allowCitizenCategorySelection", label: "Allow Citizen to Select Category", type: "toggle" },
       { key: "allowMultipleAttachments", label: "Allow Multiple Attachments", type: "toggle" },
+      { key: "maximumAttachmentCount", label: "Maximum Attachment Count", type: "number", min: 1, max: 10, suffix: "files", showWhen: ["allowMultipleAttachments", true] },
       { key: "maximumAttachmentSizeMb", label: "Maximum Attachment Size", type: "number", min: 1, max: 25, suffix: "MB" },
       { key: "allowedFileTypes", label: "Allowed File Types", type: "multiselect", options: options(["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX", "XLS", "XLSX"]), full: true },
       { key: "maximumDescriptionLength", label: "Maximum Description Length", type: "number", min: 250, max: 50000, suffix: "characters" },
@@ -55,12 +55,8 @@ export const settingsSections = [
     ],
   },
   {
-    id: "ticket", title: "Ticket and Acknowledgement", icon: "key", description: "Configure ticket generation, confirmation, and public tracking.", preview: "ticket",
+    id: "ticket", title: "Acknowledgement and Tracking", icon: "key", description: "Configure confirmation and public tracking. Ticket generation is managed in Ticket Number Format.",
     fields: [
-      { key: "autoGenerateTicketNumber", label: "Auto-Generate Ticket Number", type: "toggle" },
-      { key: "ticketPrefix", label: "Ticket Prefix", required: true, maxLength: 20 },
-      { key: "startingSequenceNumber", label: "Starting Sequence Number", type: "number", min: 1, max: 999999999 },
-      { key: "sequenceReset", label: "Sequence Reset", type: "select", options: options(["Never", "Monthly", "Yearly"]) },
       { key: "displayTicketOnConfirmation", label: "Display Ticket on Confirmation Page", type: "toggle" },
       { key: "sendSubmissionAcknowledgement", label: "Send Submission Acknowledgement", type: "toggle" },
       { key: "acknowledgementMessage", label: "Acknowledgement Message", type: "textarea", rows: 3, full: true, showWhen: ["sendSubmissionAcknowledgement", true] },
@@ -99,7 +95,7 @@ export const settingsSections = [
   {
     id: "workflow", title: "Workflow Settings", icon: "activity", description: "Control reviews, approvals, reopening, and automated closure.", preview: "workflow",
     fields: [
-      { key: "defaultNewGrievanceStatus", label: "Default New Grievance Status", type: "select", options: options(["Submitted", "Under Review", "Assigned", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned", "Overdue"]) },
+      { key: "defaultNewGrievanceStatus", label: "Default New Grievance Status", type: "select", options: options(["New", "Under Review", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned"]) },
       { key: "adminReviewRequired", label: "Admin Review Required", type: "toggle" },
       { key: "departmentAcceptanceRequired", label: "Department Acceptance Required", type: "toggle" },
       { key: "adminApprovalBeforeClosure", label: "Admin Approval Before Closure", type: "toggle" },
@@ -114,7 +110,7 @@ export const settingsSections = [
   {
     id: "notifications", title: "Notification Settings", icon: "bell", description: "Choose channels and operational events that trigger notifications.",
     fields: [
-      ["enableEmailNotifications", "Enable Email Notifications"], ["enableDashboardNotifications", "Enable Dashboard Notifications"], ["enableSmsNotifications", "Enable SMS Notifications"], ["enableWhatsappNotifications", "Enable WhatsApp Notifications"],
+      ["enableEmailNotifications", "Enable Email Notifications"], ["enableDashboardNotifications", "Enable Dashboard Notifications"],
       ["notifySuperAdminNewGrievance", "Notify Super Admin on New Grievance"], ["notifyAdminNewGrievance", "Notify Admin on New Grievance"], ["notifyDepartmentOnAssignment", "Notify Department on Assignment"], ["notifyCitizenStatusChange", "Notify Citizen on Status Change"],
       ["notifyDueDateReminder", "Notify on Due-Date Reminder"], ["notifyOverdueGrievance", "Notify on Overdue Grievance"], ["notifyAdminResolutionSubmission", "Notify Admin on Resolution Submission"], ["notifyDepartmentResolutionReturned", "Notify Department When Resolution Is Returned"], ["notifyCitizenGrievanceClosed", "Notify Citizen When Grievance Is Closed"],
     ].map(([key, label]) => ({ key, label, type: "toggle" })),
@@ -134,7 +130,6 @@ export const settingsSections = [
       { key: "forcePasswordChangeFirstLogin", label: "Force Password Change on First Login", type: "toggle" },
       { key: "enableTwoFactorAuthentication", label: "Enable Two-Factor Authentication", type: "toggle" },
       { key: "restrictConcurrentLogin", label: "Restrict Concurrent Login", type: "toggle" },
-      { key: "auditUserLoginActivity", label: "Audit User Login Activity", type: "toggle" },
     ],
   },
   {
@@ -185,7 +180,6 @@ export const settingsSections = [
       { key: "userGuideUrl", label: "User Guide URL", type: "url", full: true },
       { key: "privacyPolicyUrl", label: "Privacy Policy URL", type: "url", full: true },
       { key: "termsConditionsUrl", label: "Terms and Conditions URL", type: "url", full: true },
-      { key: "applicationVersion", label: "Application Version", required: true },
     ],
   },
 ];

@@ -75,12 +75,25 @@ const sendLoginOtp = async ({ email, name, otp, expiresInMinutes }) => {
   });
 };
 
+const sendEmail = async ({ to, subject, text, html = null }) => {
+  if (!to) throw new TypeError("An email recipient is required");
+  const transport = getTransporter();
+  await transport.sendMail({
+    from: process.env.SMTP_FROM,
+    to,
+    subject,
+    text,
+    ...(html ? { html } : {}),
+  });
+};
+
 const verifySmtpConnection = async () => {
   const transport = getTransporter();
   await transport.verify();
 };
 
 module.exports = {
+  sendEmail,
   sendLoginOtp,
   verifySmtpConnection,
 };

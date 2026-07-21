@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   adminLogin,
   getCurrentSession,
+  logout,
   resendTwoFactorCode,
   updateCurrentPassword,
   updateCurrentProfilePhoto,
@@ -29,6 +30,7 @@ router.get("/test", (req, res) => {
 
 router.post("/login", loginLimiter, adminLogin);
 router.get("/me", verifyToken, getCurrentSession);
+router.post("/logout", verifyToken, logout);
 router.patch("/profile", verifyToken, updateCurrentProfile);
 router.post(
   "/profile/photo",

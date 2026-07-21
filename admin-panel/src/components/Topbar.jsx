@@ -21,9 +21,6 @@ const pageNames = {
   "/grievances/new/create": "Grievance Form",
 };
 
-const getStoredReadId = (storageKey) =>
-  Math.max(0, Number.parseInt(localStorage.getItem(storageKey), 10) || 0);
-
 const formatRelativeTime = (value) => {
   const submittedAt = new Date(value).getTime();
   if (!Number.isFinite(submittedAt)) return "Recently";
@@ -65,21 +62,18 @@ const Topbar = ({ onLogout, onMenuClick }) => {
   const [openMenu, setOpenMenu] = useState(null);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [latestNotificationId, setLatestNotificationId] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const menusRef = useRef(null);
   const [adminUser, setAdminUser] = useState(() =>
     JSON.parse(localStorage.getItem("admin_user") || "null"),
   );
-  const name = adminUser?.name || "Marisol Young";
-  const role = adminUser?.role_name || "Super Administrator";
+  const name = adminUser?.name || "Administrator";
+  const role = adminUser?.role_name || "Administrator";
   const canViewGrievances = hasAnyPermission([
     "grievances.view_all",
     "grievances.view_department",
   ]);
-  const notificationStorageKey = `grievance_notifications_read_${
-    adminUser?.id || adminUser?.email || "admin"
-  }`;
+  const canViewNotifications = hasAnyPermission(["notifications.view"]);
   const currentPageName =
     (isAdmin() ? findAdminNavigationItem(location.pathname)?.name : null) ||
     findSuperAdminNavigationItem(location.pathname)?.name ||
@@ -87,7 +81,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
     "Dashboard";
 
   const loadNotifications = useCallback(async () => {
-    if (!canViewGrievances) {
+    if (!canViewNotifications) {
       setNotifications([]);
       setUnreadCount(0);
       return;
@@ -95,23 +89,22 @@ const Topbar = ({ onLogout, onMenuClick }) => {
 
     try {
       setNotificationsLoading(true);
-      const readId = getStoredReadId(notificationStorageKey);
-      const response = await API.get("/complaints/notifications", {
-        params: {
-          after_id: readId,
-          limit: 5,
-        },
-      });
+      const response = await API.get("/notifications", { params: { per_page: 5 } });
 
-      setNotifications(response.data.data || []);
+      setNotifications((response.data.data || []).map((item) => ({
+        ...item,
+        tokenNumber: item.token_number || "System",
+        subject: item.message,
+        complainant: "",
+        submittedAt: item.created_at,
+      })));
       setUnreadCount(Number(response.data.unread_count || 0));
-      setLatestNotificationId(Number(response.data.latest_id || readId));
     } catch {
       // Keep the topbar usable if notification polling temporarily fails.
     } finally {
       setNotificationsLoading(false);
     }
-  }, [canViewGrievances, notificationStorageKey]);
+  }, [canViewNotifications]);
 
   useEffect(() => {
     const syncUser = (event) => {
@@ -151,28 +144,26 @@ const Topbar = ({ onLogout, onMenuClick }) => {
     };
   }, [loadNotifications]);
 
-  const markReadThrough = (notificationId) => {
-    const currentReadId = getStoredReadId(notificationStorageKey);
-    const nextReadId = Math.max(currentReadId, Number(notificationId) || 0);
-    localStorage.setItem(notificationStorageKey, String(nextReadId));
-    setUnreadCount(
-      notifications.filter((item) => Number(item.id) > nextReadId).length,
-    );
+  const markRead = async (notificationId) => {
+    await API.put(`/notifications/${notificationId}/read`).catch(() => {});
+    setNotifications((current) => current.map((item) =>
+      item.id === notificationId ? { ...item, read_at: new Date().toISOString() } : item));
+    setUnreadCount((current) => Math.max(0, current - 1));
   };
 
-  const markAllRead = () => {
-    const readId = Math.max(
-      latestNotificationId,
-      getStoredReadId(notificationStorageKey),
-    );
-    localStorage.setItem(notificationStorageKey, String(readId));
+  const markAllRead = async () => {
+    await API.put("/notifications/read-all").catch(() => {});
+    setNotifications((current) => current.map((item) => ({
+      ...item,
+      read_at: item.read_at || new Date().toISOString(),
+    })));
     setUnreadCount(0);
   };
 
   const openNotification = (notification) => {
-    markReadThrough(notification.id);
+    if (!notification.read_at) markRead(notification.id);
     setOpenMenu(null);
-    navigate(`/grievances?complaint=${notification.id}`);
+    if (notification.complaint_id) navigate(`/grievances?complaint=${notification.complaint_id}`);
   };
 
   const toggleNotifications = () => {
@@ -224,8 +215,8 @@ const Topbar = ({ onLogout, onMenuClick }) => {
                   <strong>Notifications</strong>
                   <span>
                     {unreadCount
-                      ? `${unreadCount} new grievance${unreadCount === 1 ? "" : "s"}`
-                      : "No unread grievances"}
+                      ? `${unreadCount} unread notification${unreadCount === 1 ? "" : "s"}`
+                      : "No unread notifications"}
                   </span>
                 </div>
                 {unreadCount > 0 ? (
@@ -239,13 +230,11 @@ const Topbar = ({ onLogout, onMenuClick }) => {
                   <div className="notification-empty">Loading notifications...</div>
                 ) : notifications.length === 0 ? (
                   <div className="notification-empty">
-                    No grievance submissions are available.
+                    No notifications are available.
                   </div>
                 ) : (
                   notifications.map((item) => {
-                    const isUnread =
-                      Number(item.id) >
-                      getStoredReadId(notificationStorageKey);
+                    const isUnread = !item.read_at;
 
                     return (
                       <button
@@ -303,7 +292,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
                 <ProfileAvatar className="avatar large" name={name} profilePhoto={adminUser?.profile_photo} />
                 <div>
                   <strong>{name}</strong>
-                  <span>{adminUser?.email || "admin@humandevelopment.gov.bz"}</span>
+                  <span>{adminUser?.email || "Not available"}</span>
                 </div>
               </div>
               <div className="last-login">

@@ -10,17 +10,27 @@ const {
   complaintStatusLookupLimiter,
   publicComplaintSubmissionLimiter,
 } = require("../middlewares/rate-limit.middleware");
+const { getPublicSettings } = require("../controllers/public-settings.controller");
+const { getPublicCatalog } = require("../controllers/configuration.controller");
+const {
+  enforcePublicSubmission,
+  enforcePublicTracking,
+} = require("../middlewares/public-policy.middleware");
 
 const router = express.Router();
+router.get("/settings", getPublicSettings);
+router.get("/catalog", getPublicCatalog);
 router.post(
   "/complaints",
   publicComplaintSubmissionLimiter,
+  enforcePublicSubmission,
   handleComplaintUpload,
   submitComplaint,
 );
 router.post(
   "/complaints/status",
   complaintStatusLookupLimiter,
+  enforcePublicTracking,
   getComplaintStatus,
 );
 

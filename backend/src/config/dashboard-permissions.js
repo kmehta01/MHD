@@ -21,6 +21,7 @@ const DASHBOARD_CHART_PERMISSIONS = {
   open_vs_resolved: "dashboard.charts.open_vs_resolved",
   average_resolution_time: "dashboard.charts.average_resolution_time",
   overdue_by_department: "dashboard.charts.overdue_by_department",
+  recent_activity: "dashboard.activity.recent",
 };
 
 const DASHBOARD_WIDGET_PERMISSIONS = [

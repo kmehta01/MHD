@@ -31,12 +31,41 @@ const encryptText = (value) => {
   ].join(":");
 };
 
+const decryptText = (value) => {
+  if (!value) return null;
+  const [version, ivValue, tagValue, encryptedValue] = String(value).split(":");
+  if (version !== "v1" || !ivValue || !tagValue || !encryptedValue) throw new Error("Unsupported encrypted PII value");
+  const decipher = crypto.createDecipheriv("aes-256-gcm", getKey(), Buffer.from(ivValue, "base64"));
+  decipher.setAuthTag(Buffer.from(tagValue, "base64"));
+  return Buffer.concat([decipher.update(Buffer.from(encryptedValue, "base64")), decipher.final()]).toString("utf8");
+};
+
+const normalizeIdentificationNumber = (value) =>
+  String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+const hashIdentificationNumber = (value) => {
+  const normalized = normalizeIdentificationNumber(value);
+  if (!normalized) return null;
+  return crypto.createHmac("sha256", getKey()).update(normalized).digest("hex");
+};
+
 const maskSocialSecurityNumber = (value) => {
   if (!value) return null;
   return `***-**-${String(value).slice(-4)}`;
 };
 
+const maskPhoneNumber = (value) => {
+  const source = String(value || "");
+  const digits = source.replace(/\D/g, "");
+  if (!digits) return null;
+  return `${"*".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+};
+
 module.exports = {
+  decryptText,
   encryptText,
+  hashIdentificationNumber,
+  maskPhoneNumber,
   maskSocialSecurityNumber,
+  normalizeIdentificationNumber,
 };

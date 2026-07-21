@@ -78,6 +78,9 @@ app.use("/api/users", require("./routes/user.routes"));
 app.use("/api/departments", require("./routes/department.routes"));
 app.use("/api/audit-logs", require("./routes/audit-log.routes"));
 app.use("/api/settings", require("./routes/settings.routes"));
+app.use("/api/configuration", require("./routes/configuration.routes"));
+app.use("/api/notifications", require("./routes/notification.routes"));
+app.use("/api/reports", require("./routes/report.routes"));
 app.use("/api/public", require("./routes/public.routes"));
 app.use("/api/complaints", require("./routes/complaint.routes"));
 
@@ -105,4 +108,5 @@ app.get("/db-test", async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  require("./services/runtime-worker.service").start();
 });

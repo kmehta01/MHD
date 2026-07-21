@@ -7,6 +7,12 @@ import {
 } from "../services/settingsApi";
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const publishBranding = (settings) => {
+  if (!settings?.organization) return;
+  window.dispatchEvent(new CustomEvent("general-settings-branding-updated", {
+    detail: settings.organization,
+  }));
+};
 
 const useGeneralSettings = () => {
   const [settings, setSettings] = useState(null);
@@ -26,6 +32,7 @@ const useGeneralSettings = () => {
       setSettings(clone(response.data.data));
       setSavedSettings(clone(response.data.data));
       setMeta(response.data.meta || null);
+      publishBranding(response.data.data);
     } catch (requestError) {
       setError(requestError.response?.data?.message || "Unable to load General Settings.");
     } finally {
@@ -65,6 +72,7 @@ const useGeneralSettings = () => {
       setSettings(clone(response.data.data));
       setSavedSettings(clone(response.data.data));
       setMeta(response.data.meta || meta);
+      publishBranding(response.data.data);
       return { ok: true, message: response.data.message };
     } catch (requestError) {
       setFieldErrors(requestError.response?.data?.errors || {});
@@ -83,6 +91,7 @@ const useGeneralSettings = () => {
       setSettings(clone(response.data.data));
       setSavedSettings(clone(response.data.data));
       setMeta(response.data.meta || meta);
+      publishBranding(response.data.data);
       return { ok: true, message: response.data.message };
     } catch (requestError) {
       const message = requestError.response?.data?.message || `Unable to upload the ${assetType}.`;
@@ -102,6 +111,7 @@ const useGeneralSettings = () => {
       setSettings(clone(response.data.data));
       setSavedSettings(clone(response.data.data));
       setMeta(response.data.meta || meta);
+      publishBranding(response.data.data);
       return { ok: true, message: response.data.message };
     } catch (requestError) {
       const message = requestError.response?.data?.message || "Unable to restore default settings.";

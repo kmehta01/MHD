@@ -140,5 +140,5 @@ test("Super Admin receives every dashboard widget", () => {
   });
 
   assert.equal(Object.keys(payload.overview).length, 12);
-  assert.equal(Object.keys(payload.charts).length, 7);
+  assert.equal(Object.keys(payload.charts).length, 8);
 });

@@ -1,26 +1,19 @@
 const path = require("path");
 const ComplaintModel = require("../models/complaint.model");
-const { PRIORITIES, STATUSES } = require("../config/complaint-options");
-const { getGrievanceScope } = require("../utils/access-scope");
+const { getGrievanceScope, hasPermission } = require("../utils/access-scope");
+const ConfigurationModel = require("../models/configuration.model");
+const { decryptText, maskPhoneNumber } = require("../services/pii.service");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { getZonedParts, zonedPartsToDate } = require("../services/due-date.service");
 const {
   getOptionalInteger,
   getOptionalString,
 } = require("../utils/request-validation");
 
 const backendRoot = path.resolve(__dirname, "../..");
-const ISSUE_LABELS = {
-  social_welfare: "Social welfare or assistance",
-  child_protection: "Child protection services",
-  family_support: "Family support services",
-  gbv_response: "Gender-based violence response",
-  elderly_support: "Elderly support services",
-  disability_services: "Disability services",
-  staff_conduct: "Staff conduct or behaviour",
-  corruption: "Corruption or unethical behaviour",
-  service_delays: "Service delays",
-  discrimination: "Discrimination",
-  policy: "Policy implementation",
-};
+const legacyIssueLabel = (value) => String(value || "")
+  .replaceAll("_", " ")
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const toIso = (value) => (value ? new Date(value).toISOString() : null);
 const toDateOnly = (value) =>
@@ -38,22 +31,26 @@ const parseJsonArray = (value) => {
 };
 
 const getIssueSummary = (complaint) => {
+  if (complaint.category_name) return complaint.category_name;
   const labels = parseJsonArray(complaint.issue_type)
-    .map((value) => ISSUE_LABELS[value] || value)
+    .map(legacyIssueLabel)
     .filter(Boolean);
 
   if (complaint.issue_other) labels.push(complaint.issue_other);
   return labels.join(", ") || "Grievance submission";
 };
 
-const normalizeGrievanceData = (complaint) => ({
+const normalizeGrievanceData = (complaint, privacy = {}, revealPii = false) => ({
   assistance: complaint.assistance ? [complaint.assistance] : [],
   assistance_other: complaint.assistance_other,
   submission_type: complaint.submission_type,
   comp_name: complaint.comp_name,
-  comp_phone: complaint.comp_phone,
+  comp_phone: !revealPii && privacy.maskCitizenPhoneNumber ? maskPhoneNumber(complaint.comp_phone) : complaint.comp_phone,
   comp_address: complaint.comp_address,
   comp_email: complaint.comp_email,
+  identification_number: revealPii
+    ? (() => { try { return decryptText(complaint.identification_number_encrypted); } catch { return null; } })()
+    : complaint.identification_number_last4 ? `****${complaint.identification_number_last4}` : null,
   contact_pref: complaint.contact_pref,
   on_behalf: complaint.on_behalf,
   affected_name: complaint.affected_name,
@@ -79,14 +76,14 @@ const normalizeGrievanceData = (complaint) => ({
   declaration_date: toDateOnly(complaint.declaration_date),
 });
 
-const normalizeComplaintSummary = (complaint) => ({
+const normalizeComplaintSummary = (complaint, privacy = {}, revealPii = false) => ({
   id: complaint.id,
   tokenNumber: complaint.token_number,
   fullName:
     complaint.submission_type === "anonymous"
       ? "Anonymous grievance"
       : complaint.comp_name || "Named grievance",
-  phoneNumber: complaint.comp_phone,
+  phoneNumber: !revealPii && privacy.maskCitizenPhoneNumber ? maskPhoneNumber(complaint.comp_phone) : complaint.comp_phone,
   emailAddress: complaint.comp_email,
   departmentMinistry: complaint.assigned_department_name || "Unassigned",
   assignedDepartmentId: complaint.assigned_department_id || null,
@@ -117,13 +114,23 @@ const normalizeComplaintNotification = (complaint) => ({
   submittedAt: toIso(complaint.created_at),
 });
 
-const normalizeComplaintDetail = (complaint) => ({
-  ...normalizeComplaintSummary(complaint),
+const normalizeComplaintDetail = (complaint, privacy = {}, revealPii = false) => ({
+  ...normalizeComplaintSummary(complaint, privacy, revealPii),
   gender: null,
   socialSecurityNumber: null,
   complaintDetails: complaint.description,
   incidentDate: toDateOnly(complaint.incident_date),
-  grievanceData: normalizeGrievanceData(complaint),
+  grievanceData: normalizeGrievanceData(complaint, privacy, revealPii),
+  dueAt: toIso(complaint.due_at),
+  resolvedAt: toIso(complaint.resolved_at),
+  closedAt: toIso(complaint.closed_at),
+  resolutionSummary: complaint.resolution_summary,
+  assignedOfficerId: complaint.assigned_officer_id,
+  assignedOfficerName: complaint.assigned_officer_name,
+  categoryId: complaint.category_id,
+  categoryName: complaint.category_name,
+  locationId: complaint.location_id,
+  locationName: complaint.location_name,
   officeData:
     complaint.intake_source === "walk_in"
       ? {
@@ -144,7 +151,7 @@ const normalizeComplaintDetail = (complaint) => ({
   })),
 });
 
-const getFilters = (query) => {
+const getFilters = (query, timeZone = "America/Belize", workflow = { statuses: [], priorities: [] }) => {
   const search = getOptionalString(query, "search", { maxLength: 100 });
   const status = getOptionalString(query, "status", { maxLength: 40 });
   const priority = getOptionalString(query, "priority", { maxLength: 20 });
@@ -153,13 +160,13 @@ const getFilters = (query) => {
   });
   const deadline = getOptionalString(query, "deadline", { maxLength: 20 });
 
-  if (status && !STATUSES.includes(status)) {
+  if (status && !workflow.statuses.some((item) => item.name === status && item.is_active)) {
     const error = new Error("Invalid status filter");
     error.statusCode = 400;
     throw error;
   }
 
-  if (priority && !PRIORITIES.includes(priority)) {
+  if (priority && !workflow.priorities.some((item) => item.name === priority && item.is_active)) {
     const error = new Error("Invalid priority filter");
     error.statusCode = 400;
     throw error;
@@ -177,17 +184,8 @@ const getFilters = (query) => {
     throw error;
   }
 
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Belize",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
-  const getPart = (type) =>
-    Number(parts.find((part) => part.type === type)?.value);
-  const todayStart = new Date(
-    Date.UTC(getPart("year"), getPart("month") - 1, getPart("day"), 6),
-  );
+  const parts = getZonedParts(new Date(), timeZone);
+  const todayStart = zonedPartsToDate({ ...parts, hour: 0, minute: 0, second: 0 }, timeZone);
 
   return {
     assignment,
@@ -202,6 +200,7 @@ const getFilters = (query) => {
 
 const getComplaints = async (req, res) => {
   try {
+    const [settings, workflow] = await Promise.all([SettingsPolicy.getPolicy(), ConfigurationModel.listWorkflow()]);
     const scope = getGrievanceScope(req.user);
 
     if (scope.type === "none") {
@@ -211,10 +210,10 @@ const getComplaints = async (req, res) => {
       });
     }
 
-    const result = await ComplaintModel.findAll(getFilters(req.query), {
+    const result = await ComplaintModel.findAll(getFilters(req.query, settings.portal.timeZone, workflow), {
       page: getOptionalInteger(req.query, "page", { defaultValue: 1 }),
       perPage: getOptionalInteger(req.query, "per_page", {
-        defaultValue: 25,
+        defaultValue: settings.portal.recordsPerPage,
         maximum: 100,
       }),
       scope,
@@ -222,7 +221,7 @@ const getComplaints = async (req, res) => {
 
     return res.json({
       status: true,
-      data: result.rows.map(normalizeComplaintSummary),
+      data: result.rows.map((item) => normalizeComplaintSummary(item, settings.privacy, hasPermission(req.user, "grievances.view_pii"))),
       pagination: result.pagination,
     });
   } catch (error) {
@@ -300,7 +299,9 @@ const getComplaintById = async (req, res) => {
       });
     }
 
-    const complaint = await ComplaintModel.findById(complaintId, scope);
+    const [complaint, settings] = await Promise.all([
+      ComplaintModel.findById(complaintId, scope), SettingsPolicy.getPolicy(),
+    ]);
 
     if (!complaint) {
       return res.status(404).json({
@@ -311,7 +312,7 @@ const getComplaintById = async (req, res) => {
 
     return res.json({
       status: true,
-      data: normalizeComplaintDetail(complaint),
+      data: normalizeComplaintDetail(complaint, settings.privacy, hasPermission(req.user, "grievances.view_pii")),
     });
   } catch (error) {
     return res.status(500).json({
@@ -322,8 +323,37 @@ const getComplaintById = async (req, res) => {
   }
 };
 
+const getComplaintOptions = async (_req, res) => {
+  try {
+    const [workflow, settings, catalog, officers] = await Promise.all([
+      ConfigurationModel.listWorkflow(), SettingsPolicy.getPolicy(),
+      ConfigurationModel.listPublicCatalog(), ConfigurationModel.listAssignableOfficers(),
+    ]);
+    return res.json({
+      status: true,
+      data: {
+        statuses: workflow.statuses.filter((item) => item.is_active),
+        priorities: workflow.priorities.filter((item) => item.is_active),
+        transitions: workflow.transitions.filter((item) => item.is_active),
+        departments: catalog.departments,
+        categories: catalog.categories,
+        locations: catalog.locations,
+        officers,
+        policy: { assignment: settings.assignment, dueDate: settings.dueDate, workflow: settings.workflow, privacy: { allowAttachmentDownload: settings.privacy.allowAttachmentDownload } },
+      },
+    });
+  } catch (error) { return res.status(500).json({ status: false, message: "Failed to load grievance workflow options" }); }
+};
+
 const downloadComplaintAttachment = async (req, res) => {
   try {
+    const settings = await SettingsPolicy.getPolicy();
+    if (!settings.privacy.allowAttachmentDownload) {
+      return res.status(403).json({
+        status: false,
+        message: "Attachment downloads are disabled by privacy policy",
+      });
+    }
     const complaintId = Number(req.params.id);
     const attachmentId = Number(req.params.attachmentId);
 
@@ -406,5 +436,6 @@ module.exports = {
   downloadComplaintAttachment,
   getComplaintById,
   getComplaintNotifications,
+  getComplaintOptions,
   getComplaints,
 };

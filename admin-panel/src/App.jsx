@@ -18,6 +18,9 @@ import AuditLogs from "./pages/AuditLogs";
 import SuperAdminModule from "./pages/SuperAdminModule";
 import Unauthorized from "./pages/Unauthorized";
 import Profile from "./pages/Profile";
+import TicketNumberFormat from "./pages/super-admin/settings/TicketNumberFormat";
+import Reports from "./pages/Reports";
+import RuntimeConfiguration from "./pages/RuntimeConfiguration";
 
 import ProtectedRoute from "./components/ProtectedRoute";
 import PermissionRoute from "./components/PermissionRoute";
@@ -163,7 +166,7 @@ function App() {
                   "departments.manage_limited",
                 ]}
               >
-                <SuperAdminModule />
+                <RuntimeConfiguration />
               </PermissionRoute>
             }
           />
@@ -201,7 +204,7 @@ function App() {
                   "reports.view_department",
                 ]}
               >
-                <SuperAdminModule />
+                <Reports />
               </PermissionRoute>
             }
           />
@@ -240,6 +243,17 @@ function App() {
           />
           <Route path="/system-settings/general" element={<Navigate to="/super-admin/settings/general" replace />} />
           <Route
+            path="/super-admin/settings/ticket-number-format"
+            element={
+              <RoleRoute allowedRoles={["super-admin", "admin"]}>
+                <PermissionRoute permission="settings.ticket_number.view">
+                  <TicketNumberFormat />
+                </PermissionRoute>
+              </RoleRoute>
+            }
+          />
+          <Route path="/system-settings/ticket-number-format" element={<Navigate to="/super-admin/settings/ticket-number-format" replace />} />
+          <Route
             path="/system-settings/audit-logs"
             element={
               <SuperAdminRoute>
@@ -251,7 +265,7 @@ function App() {
             path="/system-settings/:setting"
             element={
               <SuperAdminRoute>
-                <SuperAdminModule />
+                <RuntimeConfiguration />
               </SuperAdminRoute>
             }
           />

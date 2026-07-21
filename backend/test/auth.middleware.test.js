@@ -3,6 +3,8 @@ const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
 const jwt = require("jsonwebtoken");
 const AuthModel = require("../src/models/auth.model");
+const SettingsPolicy = require("../src/services/settings-policy.service");
+const { generalSettingsDefaults } = require("../src/utils/default-general-settings");
 const { verifyToken } = require("../src/middlewares/auth.middleware");
 
 const buildResponse = () => ({
@@ -22,6 +24,9 @@ test("protected requests use current database permissions instead of stale token
   const originalFindUser = AuthModel.findSessionUserById;
   const originalFindPermissions = AuthModel.getActivePermissionsByRoleId;
   const originalJwtSecret = process.env.JWT_SECRET;
+  const originalGetPolicy = SettingsPolicy.getPolicy;
+  const originalFindSession = AuthModel.findActiveAdminSession;
+  const originalTouchSession = AuthModel.touchAdminSession;
   const secret = crypto.randomBytes(48).toString("base64url");
   process.env.JWT_SECRET = secret;
 
@@ -36,16 +41,26 @@ test("protected requests use current database permissions instead of stale token
     role_name: "Reviewer",
     role_slug: "reviewer",
     role_is_active: 1,
+    password_changed_at: new Date(),
+    must_change_password: 0,
   });
   AuthModel.getActivePermissionsByRoleId = async () => [
     { permission_key: "grievances.view_department" },
   ];
+  SettingsPolicy.getPolicy = async () => generalSettingsDefaults;
+  AuthModel.findActiveAdminSession = async () => ({
+    last_activity_at: new Date(),
+    expires_at: new Date(Date.now() + 3600000),
+    revoked_at: null,
+  });
+  AuthModel.touchAdminSession = async () => {};
 
   const token = jwt.sign(
     {
       id: 17,
       permissions: ["roles.update"],
       two_factor_verified: true,
+      jti: "test-session",
     },
     secret,
   );
@@ -69,6 +84,9 @@ test("protected requests use current database permissions instead of stale token
   } finally {
     AuthModel.findSessionUserById = originalFindUser;
     AuthModel.getActivePermissionsByRoleId = originalFindPermissions;
+    AuthModel.findActiveAdminSession = originalFindSession;
+    AuthModel.touchAdminSession = originalTouchSession;
+    SettingsPolicy.getPolicy = originalGetPolicy;
     if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = originalJwtSecret;
   }
@@ -77,8 +95,10 @@ test("protected requests use current database permissions instead of stale token
 test("protected requests reject inactive roles immediately", async () => {
   const originalFindUser = AuthModel.findSessionUserById;
   const originalJwtSecret = process.env.JWT_SECRET;
+  const originalGetPolicy = SettingsPolicy.getPolicy;
   const secret = crypto.randomBytes(48).toString("base64url");
   process.env.JWT_SECRET = secret;
+  SettingsPolicy.getPolicy = async () => generalSettingsDefaults;
 
   AuthModel.findSessionUserById = async () => ({
     id: 18,
@@ -104,6 +124,7 @@ test("protected requests reject inactive roles immediately", async () => {
     assert.equal(res.body.code, "SESSION_REVOKED");
   } finally {
     AuthModel.findSessionUserById = originalFindUser;
+    SettingsPolicy.getPolicy = originalGetPolicy;
     if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
     else process.env.JWT_SECRET = originalJwtSecret;
   }

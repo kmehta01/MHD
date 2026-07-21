@@ -189,9 +189,19 @@ export const adminNavigation = [
   },
   {
     name: "System Settings",
-    path: "/super-admin/settings/general",
     icon: "settings",
-    permission: ["settings.general.view", "settings.view"],
+    children: [
+      {
+        name: "General Settings",
+        path: "/super-admin/settings/general",
+        permission: ["settings.general.view", "settings.view"],
+      },
+      {
+        name: "Ticket Number Format",
+        path: "/super-admin/settings/ticket-number-format",
+        permission: "settings.ticket_number.view",
+      },
+    ],
   },
   {
     name: "Audit Logs",

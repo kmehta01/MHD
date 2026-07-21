@@ -38,11 +38,13 @@ CREATE TABLE IF NOT EXISTS departments (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(160) NOT NULL,
   slug VARCHAR(160) NOT NULL,
+  code VARCHAR(20) NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY unique_departments_name (name),
-  UNIQUE KEY unique_departments_slug (slug)
+  UNIQUE KEY unique_departments_slug (slug),
+  UNIQUE KEY unique_departments_code (code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS admin_users (
@@ -56,6 +58,10 @@ CREATE TABLE IF NOT EXISTS admin_users (
   password VARCHAR(255) NOT NULL,
   status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
   last_login DATETIME NULL,
+  failed_login_attempts INT UNSIGNED NOT NULL DEFAULT 0,
+  locked_until DATETIME NULL,
+  password_changed_at DATETIME NULL,
+  must_change_password TINYINT(1) NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY unique_admin_users_email (email),
@@ -68,6 +74,24 @@ CREATE TABLE IF NOT EXISTS admin_users (
   CONSTRAINT fk_admin_users_department
     FOREIGN KEY (department_id) REFERENCES departments (id)
     ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  session_token CHAR(36) NOT NULL,
+  admin_user_id INT UNSIGNED NOT NULL,
+  two_factor_verified TINYINT(1) NOT NULL DEFAULT 0,
+  ip_address VARCHAR(45) NULL,
+  user_agent VARCHAR(500) NULL,
+  last_activity_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  revoke_reason VARCHAR(120) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_admin_session_token (session_token),
+  KEY index_admin_sessions_user_active (admin_user_id, revoked_at, expires_at),
+  CONSTRAINT fk_admin_sessions_user FOREIGN KEY (admin_user_id)
+    REFERENCES admin_users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
@@ -130,6 +154,63 @@ CREATE TABLE IF NOT EXISTS system_setting_logs (
   CONSTRAINT fk_setting_logs_setting FOREIGN KEY (setting_id) REFERENCES system_settings (id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE IF NOT EXISTS ticket_number_settings (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  auto_generate TINYINT(1) NOT NULL DEFAULT 1,
+  ticket_prefix VARCHAR(20) NOT NULL DEFAULT 'GRM',
+  ticket_format VARCHAR(255) NOT NULL DEFAULT '{PREFIX}-{YEAR}-{SEQUENCE}',
+  `separator` VARCHAR(3) NOT NULL DEFAULT '-',
+  letter_case ENUM('uppercase', 'lowercase', 'preserve') NOT NULL DEFAULT 'uppercase',
+  include_year TINYINT(1) NOT NULL DEFAULT 1,
+  year_format ENUM('four_digit', 'two_digit') NOT NULL DEFAULT 'four_digit',
+  include_month TINYINT(1) NOT NULL DEFAULT 0,
+  include_day TINYINT(1) NOT NULL DEFAULT 0,
+  include_department_code TINYINT(1) NOT NULL DEFAULT 0,
+  include_location_code TINYINT(1) NOT NULL DEFAULT 0,
+  include_category_code TINYINT(1) NOT NULL DEFAULT 0,
+  sequence_length INT UNSIGNED NOT NULL DEFAULT 6,
+  starting_sequence BIGINT UNSIGNED NOT NULL DEFAULT 1,
+  sequence_reset ENUM('never', 'daily', 'monthly', 'yearly') NOT NULL DEFAULT 'yearly',
+  sequence_padding TINYINT(1) NOT NULL DEFAULT 1,
+  updated_by INT UNSIGNED NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY index_ticket_settings_updated_by (updated_by)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ticket_sequences (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  sequence_key VARCHAR(150) NOT NULL,
+  current_sequence BIGINT UNSIGNED NOT NULL DEFAULT 0,
+  period_start DATE NULL,
+  period_end DATE NULL,
+  last_generated_ticket VARCHAR(255) NULL,
+  last_generated_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_sequence_key (sequence_key)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ticket_number_setting_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  setting_key VARCHAR(150) NOT NULL,
+  old_value LONGTEXT NULL,
+  new_value LONGTEXT NULL,
+  changed_by INT UNSIGNED NOT NULL,
+  change_type ENUM('settings_update', 'sequence_reset', 'format_change') NOT NULL,
+  reason VARCHAR(500) NULL,
+  ip_address VARCHAR(45) NULL,
+  user_agent TEXT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_ticket_log_setting_key (setting_key),
+  KEY idx_ticket_log_changed_by (changed_by),
+  KEY idx_ticket_log_change_type (change_type),
+  KEY idx_ticket_log_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT INTO ticket_number_settings (id) VALUES (1)
+ON DUPLICATE KEY UPDATE id = VALUES(id);
+
 CREATE TABLE IF NOT EXISTS admin_two_factor_challenges (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   admin_user_id INT UNSIGNED NOT NULL,
@@ -171,9 +252,9 @@ CREATE TABLE IF NOT EXISTS admin_two_factor_recovery_codes (
 
 CREATE TABLE IF NOT EXISTS complaints (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  token_number VARCHAR(32) NULL,
+  token_number VARCHAR(255) NOT NULL,
   assigned_department_id INT UNSIGNED NULL,
-  ticket_priority ENUM('Low', 'Medium', 'High') NOT NULL DEFAULT 'Medium',
+  ticket_priority ENUM('Low', 'Medium', 'High', 'Critical') NOT NULL DEFAULT 'Medium',
   incident_date DATE NULL,
   status ENUM(
     'New',
@@ -183,7 +264,8 @@ CREATE TABLE IF NOT EXISTS complaints (
     'Resolved',
     'Closed',
     'Rejected',
-    'Duplicate'
+    'Duplicate',
+    'Returned'
   ) NOT NULL DEFAULT 'New',
   due_at DATETIME NULL,
   resolved_at DATETIME NULL,
@@ -196,6 +278,9 @@ CREATE TABLE IF NOT EXISTS complaints (
   comp_phone_digits VARCHAR(32) NULL,
   comp_address TEXT NULL,
   comp_email VARCHAR(190) NULL,
+  identification_number_encrypted TEXT NULL,
+  identification_number_hash CHAR(64) NULL,
+  identification_number_last4 VARCHAR(4) NULL,
   contact_pref ENUM('phone', 'email', 'mail', 'in_person', 'whatsapp') NULL,
   on_behalf ENUM('yes', 'no') NULL,
   affected_name VARCHAR(160) NULL,
@@ -207,6 +292,7 @@ CREATE TABLE IF NOT EXISTS complaints (
   incident_location VARCHAR(255) NULL,
   description TEXT NULL,
   desired_outcome TEXT NULL,
+  resolution_summary TEXT NULL,
   tried_resolve ENUM('yes', 'no') NULL,
   prev_attempts TEXT NULL,
   has_documents ENUM('yes', 'no') NULL,
@@ -240,6 +326,7 @@ CREATE TABLE IF NOT EXISTS complaints (
   KEY index_complaints_intake_source (intake_source),
   KEY index_complaints_created_by_admin (created_by_admin_user_id),
   KEY index_complaints_comp_phone_digits (comp_phone_digits),
+  KEY index_complaints_identification_hash (identification_number_hash),
   CONSTRAINT fk_complaints_assigned_department
     FOREIGN KEY (assigned_department_id) REFERENCES departments (id)
     ON DELETE SET NULL,
@@ -268,6 +355,16 @@ CREATE TABLE IF NOT EXISTS complaint_reference_sequences (
   last_number INT UNSIGNED NOT NULL DEFAULT 0,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS public_holidays (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  holiday_date DATE NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY unique_public_holiday_date (holiday_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO roles (id, name, slug, is_active)
@@ -433,6 +530,13 @@ VALUES
     'View Overdue grievances by department chart',
     1
   ),
+  (
+    'dashboard_activity',
+    'view_recent',
+    'dashboard.activity.recent',
+    'View Recent grievance activity',
+    1
+  ),
   ('applications', 'view', 'applications.view', 'View program applications', 1),
   ('grievances', 'view_all', 'grievances.view_all', 'View all grievances', 1),
   (
@@ -524,6 +628,10 @@ VALUES
   ('settings_general', 'update', 'settings.general.update', 'Update General Settings', 1),
   ('settings_general', 'reset', 'settings.general.reset', 'Restore default General Settings', 1),
   ('settings_general', 'history', 'settings.general.history', 'View General Settings change history', 1),
+  ('settings_ticket_number', 'view', 'settings.ticket_number.view', 'View Ticket Number Format settings', 1),
+  ('settings_ticket_number', 'update', 'settings.ticket_number.update', 'Update Ticket Number Format settings', 1),
+  ('settings_ticket_number', 'reset', 'settings.ticket_number.reset', 'Reset the active ticket sequence', 1),
+  ('settings_ticket_number', 'history', 'settings.ticket_number.history', 'View Ticket Number Format history', 1),
   ('reports', 'view_all', 'reports.view_all', 'View all reports', 1),
   (
     'reports',
@@ -583,6 +691,12 @@ WHERE roles.slug = 'admin';
 INSERT IGNORE INTO role_permissions (role_id, permission_id)
 SELECT roles.id, permissions.id
 FROM roles
+JOIN permissions ON permissions.permission_key = 'settings.ticket_number.view'
+WHERE roles.slug = 'admin';
+
+INSERT IGNORE INTO role_permissions (role_id, permission_id)
+SELECT roles.id, permissions.id
+FROM roles
 JOIN permissions ON permissions.permission_key IN (
   'dashboard.view',
   'dashboard.cards.total',
@@ -604,6 +718,7 @@ JOIN permissions ON permissions.permission_key IN (
   'dashboard.charts.open_vs_resolved',
   'dashboard.charts.average_resolution_time',
   'dashboard.charts.overdue_by_department',
+  'dashboard.activity.recent',
   'grievances.view_all',
   'grievances.view_department',
   'grievances.review_new',
@@ -650,6 +765,7 @@ JOIN permissions ON permissions.permission_key IN (
   'dashboard.charts.open_vs_resolved',
   'dashboard.charts.average_resolution_time',
   'dashboard.charts.overdue_by_department',
+  'dashboard.activity.recent',
   'grievances.view_department',
   'grievances.request_reassignment',
   'grievances.update_status',

@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useOutletContext } from "react-router-dom";
 import QRCode from "qrcode";
+import RecaptchaCheckbox from "../components/RecaptchaCheckbox";
+import { formatPortalDateTime } from "../utils/date-format";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
 
-const steps = [
-  { title: "Submission", caption: "Sections A & B" },
-  { title: "Details", caption: "Section C" },
-  { title: "Supporting info", caption: "Sections D & E" },
-  { title: "Declaration", caption: "Section F & submit" },
+const stepDefinitions = [
+  { key: "stepSubmission", caption: "A & B" },
+  { key: "stepDetails", caption: "C" },
+  { key: "stepSupporting", caption: "D & E" },
+  { key: "stepDeclaration", caption: "F" },
 ];
 
 const assistanceOptions = [
@@ -31,23 +34,6 @@ const contactOptions = [
   { value: "whatsapp", label: "WhatsApp" },
 ];
 
-const issueOptions = [
-  {
-    value: "social_welfare",
-    label: "Social welfare or assistance (BOOST, food assistance)",
-  },
-  { value: "child_protection", label: "Child protection services" },
-  { value: "family_support", label: "Family support services" },
-  { value: "gbv_response", label: "Gender-based violence response" },
-  { value: "elderly_support", label: "Elderly support services" },
-  { value: "disability_services", label: "Disability services" },
-  { value: "staff_conduct", label: "Staff conduct or behaviour" },
-  { value: "corruption", label: "Corruption or unethical behaviour" },
-  { value: "service_delays", label: "Service delays" },
-  { value: "discrimination", label: "Discrimination" },
-  { value: "policy", label: "Policy implementation" },
-];
-
 const channelOptions = [
   { value: "in_person", label: "In person" },
   { value: "telephone", label: "Telephone" },
@@ -66,13 +52,16 @@ const accommodationOptions = [
   { value: "translation", label: "Language translation" },
 ];
 
-const allowedFileTypes = [
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "image/jpeg",
-  "image/png",
-];
+const fileTypeRegistry = {
+  PDF: { accept: ".pdf", mimeTypes: ["application/pdf"] },
+  DOC: { accept: ".doc", mimeTypes: ["application/msword"] },
+  DOCX: { accept: ".docx", mimeTypes: ["application/vnd.openxmlformats-officedocument.wordprocessingml.document"] },
+  JPG: { accept: ".jpg", mimeTypes: ["image/jpeg"] },
+  JPEG: { accept: ".jpeg", mimeTypes: ["image/jpeg"] },
+  PNG: { accept: ".png", mimeTypes: ["image/png"] },
+  XLS: { accept: ".xls", mimeTypes: ["application/vnd.ms-excel"] },
+  XLSX: { accept: ".xlsx", mimeTypes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"] },
+};
 
 const getToday = () => {
   const now = new Date();
@@ -88,6 +77,10 @@ const createInitialForm = () => ({
   comp_phone: "",
   comp_address: "",
   comp_email: "",
+  identification_number: "",
+  category_id: "",
+  department_id: "",
+  location_id: "",
   contact_pref: "",
   on_behalf: "",
   affected_name: "",
@@ -179,6 +172,10 @@ function OptionTile({
 }
 
 function SubmitComplaint() {
+  const { settings, meta, language, t } = useOutletContext();
+  const submissionSettings = settings.grievanceSubmission;
+  const ticketSettings = settings.ticket;
+  const privacySettings = settings.privacy;
   const [form, setForm] = useState(createInitialForm);
   const [files, setFiles] = useState([]);
   const [fileInputKey, setFileInputKey] = useState(0);
@@ -186,6 +183,9 @@ function SubmitComplaint() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState("");
+  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [] });
+  const [catalogError, setCatalogError] = useState("");
   const [confirmation, setConfirmation] = useState(null);
   const [qrCodeReady, setQrCodeReady] = useState(false);
   const [qrCodeError, setQrCodeError] = useState("");
@@ -200,19 +200,64 @@ function SubmitComplaint() {
   const [statusLoading, setStatusLoading] = useState(false);
   const qrCanvasRef = useRef(null);
   const wizardRef = useRef(null);
+  const steps = stepDefinitions.map((step) => ({ title: t(step.key), caption: step.caption }));
 
   const isAnonymous = form.submission_type === "anonymous";
+  const maximumFiles = submissionSettings.allowMultipleAttachments
+    ? submissionSettings.maximumAttachmentCount
+    : 1;
+  const allowedTypes = submissionSettings.allowedFileTypes
+    .filter((type) => fileTypeRegistry[type]);
+  const allowedMimeTypes = allowedTypes.flatMap((type) => fileTypeRegistry[type].mimeTypes);
+  const attachmentAccept = allowedTypes.map((type) => fileTypeRegistry[type].accept).join(",");
+  const captcha = meta?.capabilities?.captcha || {};
+  const trackingMethod = ticketSettings.trackingVerificationMethod;
+  const trackingDetailLabels = {
+    "Ticket Number and Phone Number": "Phone number",
+    "Ticket Number and Email Address": "Email address",
+    "Ticket Number and Identification Number": "Identification number",
+  };
+  const trackingResultLabels = {
+    tokenNumber: "Reference number",
+    issueSummary: "Complaint subject",
+    submittedAt: "Submitted",
+    assignedDepartment: "Assigned department",
+    status: "Status",
+    updatedAt: "Last updated",
+    resolutionSummary: "Resolution summary",
+    closureDate: "Closure date",
+  };
 
   const selectedIssueLabels = useMemo(
-    () =>
-      issueOptions
-        .filter((option) => form.issue_type.includes(option.value))
-        .map((option) => option.label),
-    [form.issue_type],
+    () => [
+      catalog.categories.find((item) => String(item.id) === String(form.category_id))?.name,
+      form.issue_other,
+    ].filter(Boolean),
+    [catalog.categories, form.category_id, form.issue_other],
   );
 
   useEffect(() => {
-    if (!confirmation?.tokenNumber || !qrCanvasRef.current) {
+    setForm((current) => current.incident_location ? current : {
+      ...current,
+      incident_location: settings.organization.defaultLocation || "",
+    });
+  }, [settings.organization.defaultLocation]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE_URL}/public/catalog`, { headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        const payload = await response.json();
+        if (!response.ok || !payload.status) throw new Error(payload.message || "Unable to load grievance options");
+        if (active) setCatalog(payload.data);
+      })
+      .catch((error) => { if (active) setCatalogError(error.message); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!confirmation?.tokenNumber || !qrCanvasRef.current ||
+        !ticketSettings.displayTicketOnConfirmation || !ticketSettings.allowPublicTicketTracking) {
       return undefined;
     }
 
@@ -245,7 +290,7 @@ function SubmitComplaint() {
     return () => {
       active = false;
     };
-  }, [confirmation]);
+  }, [confirmation, ticketSettings.allowPublicTicketTracking, ticketSettings.displayTicketOnConfirmation]);
 
   useEffect(() => {
     if (
@@ -359,6 +404,15 @@ function SubmitComplaint() {
       ) {
         errors.comp_email = "Enter a valid email address.";
       }
+      if (submissionSettings.mobileNumberRequired && form.comp_phone.replace(/\D/g, "").length < 7) {
+        errors.comp_phone = "Enter a mobile number with at least 7 digits.";
+      }
+      if (submissionSettings.emailAddressRequired && !form.comp_email.trim()) {
+        errors.comp_email = "Email is required.";
+      }
+      if (submissionSettings.identificationNumberRequired && form.identification_number.replace(/[^a-z0-9]/gi, "").length < 4) {
+        errors.identification_number = "Enter a valid identification number.";
+      }
       if (!form.contact_pref) {
         errors.contact_pref = "Select a preferred contact method.";
       }
@@ -392,9 +446,15 @@ function SubmitComplaint() {
     }
 
     if (step === 2) {
-      if (!form.issue_type.length && !form.issue_other.trim()) {
+      if (!submissionSettings.allowCitizenCategorySelection && !form.issue_other.trim()) {
         errors.issue_type =
           "Select at least one issue type or specify another.";
+      }
+      if (submissionSettings.allowCitizenCategorySelection && !form.category_id) {
+        errors.category_id = "Complaint category is required.";
+      }
+      if (submissionSettings.allowCitizenDepartmentSelection && !form.department_id) {
+        errors.department_id = "Department is required.";
       }
       if (!form.channel.length) {
         errors.channel = "Select at least one contact channel.";
@@ -409,6 +469,8 @@ function SubmitComplaint() {
       }
       if (!form.description.trim()) {
         errors.description = "A detailed description is required.";
+      } else if (form.description.length > submissionSettings.maximumDescriptionLength) {
+        errors.description = `Description must be ${submissionSettings.maximumDescriptionLength} characters or fewer.`;
       }
       if (!form.desired_outcome.trim()) {
         errors.desired_outcome = "Describe the outcome you are seeking.";
@@ -425,17 +487,17 @@ function SubmitComplaint() {
       if (!form.has_documents) {
         errors.has_documents = "Select Yes or No.";
       }
-      if (files.length > 3) {
-        errors.attachments = "You can upload a maximum of 3 files.";
+      if (files.length > maximumFiles) {
+        errors.attachments = `You can upload a maximum of ${maximumFiles} file${maximumFiles === 1 ? "" : "s"}.`;
       } else {
         const invalidFile = files.find(
           (file) =>
-            !allowedFileTypes.includes(file.type) ||
-            file.size > 5 * 1024 * 1024,
+            !allowedMimeTypes.includes(file.type) ||
+            file.size > submissionSettings.maximumAttachmentSizeMb * 1024 * 1024,
         );
         if (invalidFile) {
           errors.attachments =
-            "Use PDF, DOC, DOCX, JPG, or PNG files up to 5 MB each.";
+            `Use ${allowedTypes.join(", ")} files up to ${submissionSettings.maximumAttachmentSizeMb} MB each.`;
         }
       }
       if (!form.has_witnesses) {
@@ -453,7 +515,7 @@ function SubmitComplaint() {
     }
 
     if (step === 4) {
-      if (!form.declaration_confirm) {
+      if ((submissionSettings.displayDeclarationCheckbox || privacySettings.citizenConsentRequired) && !form.declaration_confirm) {
         errors.declaration_confirm = "Confirm the declaration.";
       }
       if (!isAnonymous && !form.signature.trim()) {
@@ -463,6 +525,9 @@ function SubmitComplaint() {
         errors.declaration_date = "Declaration date is required.";
       } else if (form.declaration_date > getToday()) {
         errors.declaration_date = "Declaration date cannot be in the future.";
+      }
+      if (submissionSettings.enableCaptcha && !captchaToken) {
+        errors.captchaToken = "Complete the CAPTCHA verification.";
       }
     }
 
@@ -527,6 +592,7 @@ function SubmitComplaint() {
       }
     });
     files.forEach((file) => payload.append("attachments", file));
+    if (captchaToken) payload.append("captchaToken", captchaToken);
 
     try {
       setSubmitting(true);
@@ -548,6 +614,7 @@ function SubmitComplaint() {
       setConfirmation(result.data);
       setForm(createInitialForm());
       setFiles([]);
+      setCaptchaToken("");
       setFileInputKey((current) => current + 1);
       setFieldErrors({});
       setActiveStep(1);
@@ -564,11 +631,9 @@ function SubmitComplaint() {
     setStatusError("");
     setStatusResult(null);
 
-    if (
-      !statusLookup.tokenNumber.trim() ||
-      !statusLookup.contactDetail.trim()
-    ) {
-      setStatusError("Reference number and contact detail are required.");
+    const ticketOnly = ticketSettings.trackingVerificationMethod === "Ticket Number Only";
+    if (!statusLookup.tokenNumber.trim() || (!ticketOnly && !statusLookup.contactDetail.trim())) {
+      setStatusError(ticketOnly ? "Reference number is required." : "Reference number and verification detail are required.");
       return;
     }
 
@@ -613,8 +678,8 @@ function SubmitComplaint() {
     <main className="grievance-page">
       <section className="subpage-hero subpage-hero--complaint">
         <div className="container subpage-hero__container">
-          <p className="section-label">Grievance Redress Mechanism</p>
-          <h1>Grievance Submission Form</h1>
+          <p className="section-label">{t("grm")}</p>
+          <h1>{t("formTitle")}</h1>
           <p>
             Submit a concern to the Ministry of Human Development, Family
             Support, and Gender Affairs.
@@ -644,7 +709,13 @@ function SubmitComplaint() {
 
           <div className="grievance-portal__layout">
             <div className="grievance-wizard" ref={wizardRef}>
-              {confirmation ? (
+              {!submissionSettings.allowPublicSubmission ? (
+                <section className="grievance-receipt" role="status">
+                  <div className="grievance-receipt__icon"><i className="fa-solid fa-circle-info" /></div>
+                  <h2>Public submission is unavailable</h2>
+                  <p>The grievance form has been temporarily disabled by the portal administrator.</p>
+                </section>
+              ) : confirmation ? (
                 <section className="grievance-receipt" role="status">
                   <div className="grievance-receipt__icon">
                     <i className="fa-solid fa-check" aria-hidden="true"></i>
@@ -654,20 +725,18 @@ function SubmitComplaint() {
                   </p>
                   <h2>Your grievance has been filed</h2>
                   <p className="grievance-receipt__summary">
-                    {confirmation.isAnonymous
-                      ? "Your anonymous grievance has been received. Save the reference number below for your acknowledgement and future case correspondence."
-                      : "Save the reference number below. You will need it with your contact detail to check progress."}
+                    {ticketSettings.acknowledgementMessage}
                   </p>
 
-                  <div className="grievance-receipt__code">
+                  {ticketSettings.displayTicketOnConfirmation ? <div className="grievance-receipt__code">
                     <span>Your reference number</span>
                     <strong>{confirmation.tokenNumber}</strong>
                     <small>
                       Format: GRM · Year · Month · Sequential number
                     </small>
-                  </div>
+                  </div> : null}
 
-                  <div className="grievance-receipt__tracking">
+                  {ticketSettings.displayTicketOnConfirmation && ticketSettings.allowPublicTicketTracking ? <div className="grievance-receipt__tracking">
                     <div className="grievance-receipt__qr">
                       <canvas
                         aria-label={`QR code for grievance ${confirmation.tokenNumber}`}
@@ -691,7 +760,7 @@ function SubmitComplaint() {
                         reference number {confirmation.tokenNumber}.
                       </p>
                       <a href={buildTrackingPath(confirmation.tokenNumber)}>
-                        Track status online
+                        {t("trackOnline")}
                         <i
                           className="fa-solid fa-arrow-right"
                           aria-hidden="true"
@@ -703,7 +772,7 @@ function SubmitComplaint() {
                         </small>
                       ) : null}
                     </div>
-                  </div>
+                  </div> : null}
 
                   <dl className="grievance-receipt__details">
                     <div>
@@ -740,7 +809,7 @@ function SubmitComplaint() {
                     onClick={startAnotherGrievance}
                     type="button"
                   >
-                    File another grievance
+                    {t("another")}
                   </button>
                 </section>
               ) : (
@@ -902,14 +971,14 @@ function SubmitComplaint() {
                               onChange={updateField}
                               value="named"
                             />
-                            <OptionTile
+                            {submissionSettings.allowAnonymousComplaints ? <OptionTile
                               checked={form.submission_type === "anonymous"}
                               label="Anonymous submission"
                               name="submission_type"
                               note="No contact details or direct updates."
                               onChange={updateField}
                               value="anonymous"
-                            />
+                            /> : null}
                           </div>
                           {isAnonymous ? (
                             <div className="grievance-warning">
@@ -954,7 +1023,7 @@ function SubmitComplaint() {
                                 {fieldError("comp_name")}
                               </label>
                               <label className="grievance-field">
-                                <span>Phone</span>
+                                <span>Phone {submissionSettings.mobileNumberRequired ? <Required /> : null}</span>
                                 <input
                                   aria-invalid={Boolean(fieldErrors.comp_phone)}
                                   autoComplete="tel"
@@ -982,9 +1051,7 @@ function SubmitComplaint() {
                                 {fieldError("comp_address")}
                               </label>
                               <label className="grievance-field grievance-field--wide">
-                                <span>
-                                  Email <em>(optional)</em>
-                                </span>
+                                <span>Email {submissionSettings.emailAddressRequired ? <Required /> : <em>(optional)</em>}</span>
                                 <input
                                   aria-invalid={Boolean(fieldErrors.comp_email)}
                                   autoComplete="email"
@@ -995,6 +1062,20 @@ function SubmitComplaint() {
                                   value={form.comp_email}
                                 />
                                 {fieldError("comp_email")}
+                              </label>
+                              <label className="grievance-field grievance-field--wide">
+                                <span>Identification number {submissionSettings.identificationNumberRequired ? <Required /> : <em>(optional)</em>}</span>
+                                <input
+                                  aria-invalid={Boolean(fieldErrors.identification_number)}
+                                  autoComplete="off"
+                                  name="identification_number"
+                                  onChange={updateField}
+                                  placeholder="Enter your identification number"
+                                  type="text"
+                                  value={form.identification_number}
+                                />
+                                <small className="grievance-field__help">Stored encrypted and never displayed in full.</small>
+                                {fieldError("identification_number")}
                               </label>
                             </div>
 
@@ -1128,37 +1209,42 @@ function SubmitComplaint() {
                             </div>
                           </div>
 
-                          <fieldset className="grievance-fieldset">
-                            <legend>
-                              What type of issue are you reporting? <Required />
-                            </legend>
-                            <div className="grievance-option-grid">
-                              {issueOptions.map((option) => (
-                                <OptionTile
-                                  checked={form.issue_type.includes(
-                                    option.value,
-                                  )}
-                                  key={option.value}
-                                  label={option.label}
-                                  name="issue_type"
-                                  onChange={updateArrayField}
-                                  type="checkbox"
-                                  value={option.value}
-                                />
-                              ))}
-                            </div>
-                            <label className="grievance-field">
-                              <span>Other issue</span>
-                              <input
-                                name="issue_other"
-                                onChange={updateField}
-                                placeholder="Specify another issue type"
-                                type="text"
-                                value={form.issue_other}
-                              />
-                            </label>
+                          {catalogError ? <div className="grievance-form-message error" role="alert">{catalogError}</div> : null}
+                          <div className="grievance-field-grid">
+                            {submissionSettings.allowCitizenCategorySelection ? (
+                              <label className="grievance-field">
+                                <span>Complaint category <Required /></span>
+                                <select aria-invalid={Boolean(fieldErrors.category_id)} name="category_id" onChange={updateField} value={form.category_id}>
+                                  <option value="">Select a category</option>
+                                  {catalog.categories.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                </select>
+                                {fieldError("category_id")}
+                              </label>
+                            ) : null}
+                            {submissionSettings.allowCitizenDepartmentSelection ? (
+                              <label className="grievance-field">
+                                <span>Department <Required /></span>
+                                <select aria-invalid={Boolean(fieldErrors.department_id)} name="department_id" onChange={updateField} value={form.department_id}>
+                                  <option value="">Select a department</option>
+                                  {catalog.departments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                                </select>
+                                {fieldError("department_id")}
+                              </label>
+                            ) : null}
+                          </div>
+
+                          <label className="grievance-field">
+                            <span>{submissionSettings.allowCitizenCategorySelection ? "Additional subject detail" : <>Complaint subject <Required /></>}</span>
+                            <input
+                              name="issue_other"
+                              onChange={updateField}
+                              placeholder="Briefly identify the issue"
+                              required={!submissionSettings.allowCitizenCategorySelection}
+                              type="text"
+                              value={form.issue_other}
+                            />
                             {fieldError("issue_type")}
-                          </fieldset>
+                          </label>
 
                           <fieldset className="grievance-fieldset">
                             <legend>
@@ -1214,6 +1300,13 @@ function SubmitComplaint() {
                               />
                               {fieldError("incident_location")}
                             </label>
+                            <label className="grievance-field">
+                              <span>District or service location</span>
+                              <select name="location_id" onChange={updateField} value={form.location_id}>
+                                <option value="">Select a location</option>
+                                {catalog.locations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                              </select>
+                            </label>
                           </div>
 
                           <label className="grievance-field">
@@ -1226,12 +1319,14 @@ function SubmitComplaint() {
                             </small>
                             <textarea
                               aria-invalid={Boolean(fieldErrors.description)}
+                              maxLength={submissionSettings.maximumDescriptionLength}
                               name="description"
                               onChange={updateField}
                               placeholder="Describe what happened in as much detail as possible"
                               rows="6"
                               value={form.description}
                             ></textarea>
+                            <small className="grievance-field__help">{form.description.length} / {submissionSettings.maximumDescriptionLength} characters</small>
                             {fieldError("description")}
                           </label>
 
@@ -1354,16 +1449,13 @@ function SubmitComplaint() {
                               <div className="grievance-upload">
                                 <div className="grievance-upload__heading">
                                   <h4>Upload supporting documents</h4>
-                                  <p>
-                                    Up to 3 files, 5 MB each. PDF, DOC, DOCX,
-                                    JPG, or PNG.
-                                  </p>
+                                  <p>Up to {maximumFiles} file{maximumFiles === 1 ? "" : "s"}, {submissionSettings.maximumAttachmentSizeMb} MB each. {allowedTypes.join(", ")}.</p>
                                 </div>
                                 <label className="grievance-upload__dropzone">
                                   <input
-                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                                    accept={attachmentAccept}
                                     key={fileInputKey}
-                                    multiple
+                                    multiple={submissionSettings.allowMultipleAttachments}
                                     onChange={updateFiles}
                                     type="file"
                                   />
@@ -1574,33 +1666,11 @@ function SubmitComplaint() {
                           </div>
 
                           <div className="grievance-declaration">
-                            <p>
-                              I declare that the information provided in this
-                              form is true and accurate to the best of my
-                              knowledge. I understand that:
-                            </p>
-                            <ul>
-                              <li>My identity shall be kept confidential.</li>
-                              <li>
-                                I shall be provided with a unique reference
-                                number at intake, unless I have chosen to submit
-                                anonymously.
-                              </li>
-                              <li>
-                                I shall receive updates on the progress of my
-                                grievance, unless I have chosen to submit
-                                anonymously.
-                              </li>
-                              <li>
-                                I have the right to appeal on objective grounds,
-                                including disagreement with the decision, a
-                                procedural error, evidence not being considered,
-                                an unreasonable delay, or retaliation.
-                              </li>
-                            </ul>
+                            <p>{privacySettings.privacyNotice}</p>
+                            <p>{privacySettings.termsAndConditions}</p>
                           </div>
 
-                          <label
+                          {submissionSettings.displayDeclarationCheckbox || privacySettings.citizenConsentRequired ? <label
                             className={`grievance-declaration-check ${
                               form.declaration_confirm ? "is-checked" : ""
                             }`}
@@ -1613,15 +1683,15 @@ function SubmitComplaint() {
                             />
                             <span>
                               <strong>
-                                I agree to this declaration <Required />
+                                {submissionSettings.declarationText} <Required />
                               </strong>
                               <small>
                                 Checking this box is your electronic
                                 confirmation.
                               </small>
                             </span>
-                          </label>
-                          {fieldError("declaration_confirm")}
+                          </label> : null}
+                          {submissionSettings.displayDeclarationCheckbox || privacySettings.citizenConsentRequired ? fieldError("declaration_confirm") : null}
 
                           <div className="grievance-field-grid">
                             {!isAnonymous ? (
@@ -1696,6 +1766,16 @@ function SubmitComplaint() {
                               </label>
                             </div>
                           </div>
+                          {submissionSettings.enableCaptcha ? (
+                            captcha.ready ? (
+                              <>
+                                <RecaptchaCheckbox onChange={setCaptchaToken} siteKey={captcha.siteKey} />
+                                {fieldError("captchaToken")}
+                              </>
+                            ) : (
+                              <div className="grievance-form__alert" role="alert">CAPTCHA is enabled but not configured. Submission is temporarily unavailable.</div>
+                            )
+                          ) : null}
                         </section>
                       </div>
 
@@ -1720,7 +1800,7 @@ function SubmitComplaint() {
                               className="fa-solid fa-arrow-left"
                               aria-hidden="true"
                             ></i>
-                            Previous
+                            {t("previous")}
                           </button>
                         ) : (
                           <span></span>
@@ -1732,7 +1812,7 @@ function SubmitComplaint() {
                             onClick={continueToNextStep}
                             type="button"
                           >
-                            Continue
+                            {t("continue")}
                             <i
                               className="fa-solid fa-arrow-right"
                               aria-hidden="true"
@@ -1741,10 +1821,10 @@ function SubmitComplaint() {
                         ) : (
                           <button
                             className="grievance-button grievance-button--submit"
-                            disabled={submitting}
+                            disabled={submitting || (submissionSettings.enableCaptcha && !captcha.ready)}
                             type="submit"
                           >
-                            {submitting ? "Submitting..." : "Submit grievance"}
+                            {submitting ? `${t("submit")}…` : t("submit")}
                             <i
                               className="fa-solid fa-paper-plane"
                               aria-hidden="true"
@@ -1758,23 +1838,20 @@ function SubmitComplaint() {
               )}
             </div>
 
-            <aside className="grievance-tracker" id="track-grievance">
+            {ticketSettings.allowPublicTicketTracking ? <aside className="grievance-tracker" id="track-grievance">
               <div className="grievance-tracker__icon">
                 <i
                   className="fa-solid fa-magnifying-glass"
                   aria-hidden="true"
                 ></i>
               </div>
-              <p className="section-label">Track a grievance</p>
-              <h2>Check status</h2>
-              <p>
-                Named complainants can use their reference number and a contact
-                detail supplied in the form.
-              </p>
+              <p className="section-label">{t("track")}</p>
+              <h2>{t("checkStatus")}</h2>
+              <p>Verification method: {trackingMethod}.</p>
 
               <form onSubmit={checkStatus}>
                 <label>
-                  <span>Reference number</span>
+                  <span>{t("trackingReference")}</span>
                   <input
                     name="tokenNumber"
                     onChange={(event) =>
@@ -1788,8 +1865,8 @@ function SubmitComplaint() {
                     value={statusLookup.tokenNumber}
                   />
                 </label>
-                <label>
-                  <span>Phone, email, name, or address</span>
+                {trackingMethod !== "Ticket Number Only" ? <label>
+                  <span>{trackingDetailLabels[trackingMethod]}</span>
                   <input
                     name="contactDetail"
                     onChange={(event) =>
@@ -1798,45 +1875,31 @@ function SubmitComplaint() {
                         contactDetail: event.target.value,
                       }))
                     }
-                    placeholder="Contact detail used to submit"
+                    placeholder={trackingDetailLabels[trackingMethod]}
                     type="text"
                     value={statusLookup.contactDetail}
                   />
-                </label>
+                </label> : null}
                 {statusError ? (
                   <div className="grievance-tracker__error" role="alert">
                     {statusError}
                   </div>
                 ) : null}
                 <button disabled={statusLoading} type="submit">
-                  {statusLoading ? "Checking..." : "Check status"}
+                  {statusLoading ? `${t("checkStatus")}…` : t("checkStatus")}
                 </button>
               </form>
 
               {statusResult ? (
                 <dl className="grievance-tracker__result">
-                  <div>
-                    <dt>Status</dt>
-                    <dd>{statusResult.status}</dd>
-                  </div>
-                  <div>
-                    <dt>Issue type</dt>
-                    <dd>{statusResult.issueSummary}</dd>
-                  </div>
-                  <div>
-                    <dt>Incident location</dt>
-                    <dd>{statusResult.incidentLocation}</dd>
-                  </div>
-                  <div>
-                    <dt>Submitted</dt>
-                    <dd>
-                      {statusResult.submittedAt
-                        ? new Date(statusResult.submittedAt).toLocaleDateString(
-                            "en-BZ",
-                          )
-                        : "Not provided"}
-                    </dd>
-                  </div>
+                  {Object.entries(statusResult).map(([key, value]) => (
+                    <div key={key}>
+                      <dt>{trackingResultLabels[key] || key}</dt>
+                      <dd>{["submittedAt", "updatedAt", "closureDate"].includes(key) && value
+                        ? formatPortalDateTime(value, settings.portal, language)
+                        : value || "Not provided"}</dd>
+                    </div>
+                  ))}
                 </dl>
               ) : null}
 
@@ -1844,7 +1907,7 @@ function SubmitComplaint() {
                 <i className="fa-solid fa-lock" aria-hidden="true"></i>
                 <span>Your grievance information is handled securely.</span>
               </div>
-            </aside>
+            </aside> : null}
           </div>
         </div>
       </section>

@@ -6,7 +6,7 @@ const createComplaintTables = async (connection) => {
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       token_number VARCHAR(32) NULL,
       assigned_department_id INT UNSIGNED NULL,
-      ticket_priority ENUM('Low', 'Medium', 'High') NOT NULL DEFAULT 'Medium',
+      ticket_priority ENUM('Low', 'Medium', 'High', 'Critical') NOT NULL DEFAULT 'Medium',
       incident_date DATE NULL,
       status ENUM(
         'New',
@@ -16,7 +16,8 @@ const createComplaintTables = async (connection) => {
         'Resolved',
         'Closed',
         'Rejected',
-        'Duplicate'
+        'Duplicate',
+        'Returned'
       ) NOT NULL DEFAULT 'New',
       due_at DATETIME NULL,
       resolved_at DATETIME NULL,
@@ -80,12 +81,12 @@ const createComplaintTables = async (connection) => {
     ["assigned_department_id", "INT UNSIGNED NULL AFTER token_number"],
     [
       "ticket_priority",
-      "ENUM('Low', 'Medium', 'High') NOT NULL DEFAULT 'Medium' AFTER assigned_department_id",
+      "ENUM('Low', 'Medium', 'High', 'Critical') NOT NULL DEFAULT 'Medium' AFTER assigned_department_id",
     ],
     ["incident_date", "DATE NULL AFTER ticket_priority"],
     [
       "status",
-      "ENUM('New', 'Under Review', 'In Progress', 'Pending Information', 'Resolved', 'Closed', 'Rejected', 'Duplicate') NOT NULL DEFAULT 'New' AFTER incident_date",
+      "ENUM('New', 'Under Review', 'In Progress', 'Pending Information', 'Resolved', 'Closed', 'Rejected', 'Duplicate', 'Returned') NOT NULL DEFAULT 'New' AFTER incident_date",
     ],
     ["due_at", "DATETIME NULL AFTER status"],
     ["resolved_at", "DATETIME NULL AFTER due_at"],
@@ -101,9 +102,12 @@ const createComplaintTables = async (connection) => {
     ["comp_phone_digits", "VARCHAR(32) NULL AFTER comp_phone"],
     ["comp_address", "TEXT NULL AFTER comp_phone_digits"],
     ["comp_email", "VARCHAR(190) NULL AFTER comp_address"],
+    ["identification_number_encrypted", "TEXT NULL AFTER comp_email"],
+    ["identification_number_hash", "CHAR(64) NULL AFTER identification_number_encrypted"],
+    ["identification_number_last4", "VARCHAR(4) NULL AFTER identification_number_hash"],
     [
       "contact_pref",
-      "ENUM('phone', 'email', 'mail', 'in_person', 'whatsapp') NULL AFTER comp_email",
+      "ENUM('phone', 'email', 'mail', 'in_person', 'whatsapp') NULL AFTER identification_number_last4",
     ],
     ["on_behalf", "ENUM('yes', 'no') NULL AFTER contact_pref"],
     ["affected_name", "VARCHAR(160) NULL AFTER on_behalf"],
@@ -118,6 +122,7 @@ const createComplaintTables = async (connection) => {
     ["incident_location", "VARCHAR(255) NULL AFTER channel"],
     ["description", "TEXT NULL AFTER incident_location"],
     ["desired_outcome", "TEXT NULL AFTER description"],
+    ["resolution_summary", "TEXT NULL AFTER desired_outcome"],
     ["tried_resolve", "ENUM('yes', 'no') NULL AFTER desired_outcome"],
     ["prev_attempts", "TEXT NULL AFTER tried_resolve"],
     ["has_documents", "ENUM('yes', 'no') NULL AFTER prev_attempts"],
@@ -197,6 +202,12 @@ const createComplaintTables = async (connection) => {
 
   await connection.query(`
     ALTER TABLE complaints
+    MODIFY COLUMN ticket_priority ENUM('Low', 'Medium', 'High', 'Critical')
+    NOT NULL DEFAULT 'Medium'
+  `);
+
+  await connection.query(`
+    ALTER TABLE complaints
     MODIFY COLUMN status ENUM(
       'New',
       'In Review',
@@ -206,7 +217,8 @@ const createComplaintTables = async (connection) => {
       'Resolved',
       'Closed',
       'Rejected',
-      'Duplicate'
+      'Duplicate',
+      'Returned'
     ) NOT NULL DEFAULT 'New'
   `);
 
@@ -226,7 +238,8 @@ const createComplaintTables = async (connection) => {
       'Resolved',
       'Closed',
       'Rejected',
-      'Duplicate'
+      'Duplicate',
+      'Returned'
     ) NOT NULL DEFAULT 'New'
   `);
 
@@ -293,6 +306,10 @@ const createComplaintTables = async (connection) => {
       "index_complaints_comp_phone_digits",
       "KEY index_complaints_comp_phone_digits (comp_phone_digits)",
     ],
+    [
+      "index_complaints_identification_hash",
+      "KEY index_complaints_identification_hash (identification_number_hash)",
+    ],
   ];
 
   for (const [indexName, definition] of requiredIndexes) {
@@ -351,6 +368,18 @@ const createComplaintTables = async (connection) => {
       last_number INT UNSIGNED NOT NULL DEFAULT 0,
       updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+  `);
+
+  await connection.query(`
+    CREATE TABLE IF NOT EXISTS public_holidays (
+      id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      holiday_date DATE NOT NULL,
+      name VARCHAR(160) NOT NULL,
+      is_active TINYINT(1) NOT NULL DEFAULT 1,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY unique_public_holiday_date (holiday_date)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
   `);
 };

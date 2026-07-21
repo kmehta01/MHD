@@ -255,7 +255,10 @@ const Profile = () => {
         new_password: passwordForm.new_password,
       });
       setPasswordForm(emptyPasswordForm);
-      setPasswordNotice({ type: "success", text: response.data.message });
+      setPasswordNotice({ type: "success", text: `${response.data.message}. Sign in again with your new password.` });
+      localStorage.removeItem("admin_token");
+      localStorage.removeItem("admin_user");
+      window.setTimeout(() => window.location.assign("/login"), 800);
     } catch (error) {
       setPasswordNotice({
         type: "error",

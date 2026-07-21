@@ -3,16 +3,28 @@ import { Outlet, useNavigate } from "react-router-dom";
 import Sidebar from "../components/Sidebar";
 import Topbar from "../components/Topbar";
 import API from "../services/api";
+import {
+  applyDocumentBranding,
+  normalizeBranding,
+  readStoredBranding,
+} from "../utils/branding";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [, setSessionRevision] = useState(0);
+  const [branding, setBranding] = useState(readStoredBranding);
 
-  const logout = () => {
-    localStorage.removeItem("admin_token");
-    localStorage.removeItem("admin_user");
-    navigate("/login");
+  const logout = async () => {
+    try {
+      await API.post("/auth/logout");
+    } catch {
+      // Local sign-out still completes if the session already expired.
+    } finally {
+      localStorage.removeItem("admin_token");
+      localStorage.removeItem("admin_user");
+      navigate("/login");
+    }
   };
 
   useEffect(() => {
@@ -47,9 +59,34 @@ const AdminLayout = () => {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    const acceptBranding = (organization) => {
+      const next = normalizeBranding(organization);
+      if (!active) return;
+      setBranding(next);
+      localStorage.setItem("admin_branding", JSON.stringify(next));
+      applyDocumentBranding(next);
+    };
+    const handleBrandingUpdate = (event) => acceptBranding(event.detail);
+
+    applyDocumentBranding(readStoredBranding());
+    API.get("/settings/general")
+      .then((response) => acceptBranding(response.data.data?.organization || {}))
+      .catch(() => {
+        // Retain the saved/default brand if settings are temporarily unavailable.
+      });
+    window.addEventListener("general-settings-branding-updated", handleBrandingUpdate);
+    return () => {
+      active = false;
+      window.removeEventListener("general-settings-branding-updated", handleBrandingUpdate);
+    };
+  }, []);
+
   return (
     <div className="admin-shell">
       <Sidebar
+        branding={branding}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={logout}

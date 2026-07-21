@@ -16,7 +16,7 @@ const DISTRICTS = [
   "Toledo",
 ];
 
-const PRIORITIES = ["Low", "Medium", "High"];
+const PRIORITIES = ["Low", "Medium", "High", "Critical"];
 
 const STATUSES = [
   "New",
@@ -27,6 +27,7 @@ const STATUSES = [
   "Closed",
   "Rejected",
   "Duplicate",
+  "Returned",
 ];
 
 const CATEGORY_BY_DEPARTMENT = {

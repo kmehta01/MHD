@@ -6,7 +6,6 @@ import SettingToggle from "../../../components/settings/SettingToggle";
 import SettingsHistoryModal from "../../../components/settings/SettingsHistoryModal";
 import SettingsSection from "../../../components/settings/SettingsSection";
 import SettingsSidebar from "../../../components/settings/SettingsSidebar";
-import TicketPreview from "../../../components/settings/TicketPreview";
 import UnsavedChangesModal from "../../../components/settings/UnsavedChangesModal";
 import Icon from "../../../components/Icon";
 import useGeneralSettings from "../../../hooks/useGeneralSettings";
@@ -247,8 +246,7 @@ const GeneralSettings = () => {
         <main className="general-settings-content">
           {visibleSections.map((section) => (
             <SettingsSection description={section.description} icon={section.icon} id={section.id} key={section.id} title={section.title}>
-              {section.preview === "ticket" ? <TicketPreview settings={settings.ticket} /> : null}
-              {section.preview === "workflow" ? <div className="settings-workflow-preview" aria-label="Default grievance workflow">{["Submitted", "Under Review", "Assigned", "In Progress", "Resolved", "Closed"].map((status, index) => <span key={status}><b>{index + 1}</b>{status}{index < 5 ? <Icon name="chevronRight" size={14} /> : null}</span>)}</div> : null}
+              {section.preview === "workflow" ? <div className="settings-workflow-preview" aria-label="Default grievance workflow">{["New", "Under Review", "In Progress", "Resolved", "Closed"].map((status, index, statuses) => <span key={status}><b>{index + 1}</b>{status}{index < statuses.length - 1 ? <Icon name="chevronRight" size={14} /> : null}</span>)}</div> : null}
               <div className="general-settings-form-grid">{section.fields.map((field) => renderField(section, field))}</div>
               {section.preview === "dashboard" ? <DashboardPreview settings={settings.dashboard} /> : null}
             </SettingsSection>

@@ -30,6 +30,12 @@ API.interceptors.response.use(
       }
     }
 
+    if (error.response?.status === 403 &&
+        error.response?.data?.code === "PASSWORD_CHANGE_REQUIRED" &&
+        window.location.pathname !== "/profile") {
+      window.location.assign("/profile");
+    }
+
     return Promise.reject(error);
   },
 );

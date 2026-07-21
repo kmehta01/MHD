@@ -2,6 +2,8 @@ const bcrypt = require("bcryptjs");
 const UserModel = require("../models/user.model");
 const TwoFactorModel = require("../models/two-factor.model");
 const { runAuditedMutation } = require("../services/audit-log.service");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { getPasswordPolicyErrors } = require("../services/password-policy.service");
 const {
   generateRecoveryCodes,
   hashRecoveryCode,
@@ -87,10 +89,13 @@ const createUser = async (req, res) => {
       });
     }
 
-    if (password.length < 8) {
+    const settings = await SettingsPolicy.getPolicy();
+    const passwordErrors = getPasswordPolicyErrors(password, settings.security);
+    if (passwordErrors.length) {
       return res.status(400).json({
         status: false,
-        message: "Password must be at least 8 characters long",
+        message: passwordErrors[0],
+        errors: passwordErrors,
       });
     }
 
@@ -139,6 +144,7 @@ const createUser = async (req, res) => {
             phone: phone || null,
             password: hashedPassword,
             status: status || "active",
+            mustChangePassword: settings.security.forcePasswordChangeFirstLogin,
           },
           connection,
         ),
@@ -276,11 +282,16 @@ const updateUserPassword = async (req, res) => {
     const { id } = req.params;
     const password = req.body?.password;
 
-    if (typeof password !== "string" || password.length < 8) {
+    if (typeof password !== "string") {
       return res.status(400).json({
         status: false,
-        message: "Password must be at least 8 characters long",
+        message: "Password must be text",
       });
+    }
+    const settings = await SettingsPolicy.getPolicy();
+    const passwordErrors = getPasswordPolicyErrors(password, settings.security);
+    if (passwordErrors.length) {
+      return res.status(400).json({ status: false, message: passwordErrors[0], errors: passwordErrors });
     }
 
     const targetUser = await UserModel.findById(id);
@@ -304,7 +315,7 @@ const updateUserPassword = async (req, res) => {
         resourceType: "admin_user",
         resourceId: id,
       },
-      (connection) => UserModel.updatePassword(id, hashedPassword, connection),
+      (connection) => UserModel.updatePassword(id, hashedPassword, connection, true),
     );
 
     return res.json({

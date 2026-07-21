@@ -9,19 +9,21 @@ const OPEN_STATUSES = [
 const RESOLVED_STATUSES = ["Resolved", "Closed"];
 const FINAL_STATUSES = ["Resolved", "Closed", "Rejected", "Duplicate"];
 
-const getScopeFilter = (scope, alias = "c") => {
+const getScopeFilter = (scope, alias = "c", periodStart = null) => {
+  const periodClause = periodStart ? `${alias}.created_at >= ?` : null;
+  const withPeriod = (clause, values) => ({
+    clause: periodClause ? `(${clause}) AND ${periodClause}` : clause,
+    values: periodStart ? [...values, periodStart] : values,
+  });
   if (scope.type === "department") {
-    return {
-      clause: `${alias}.assigned_department_id = ?`,
-      values: [scope.departmentId],
-    };
+    return withPeriod(`${alias}.assigned_department_id = ?`, [scope.departmentId]);
   }
 
   if (scope.type === "none") {
-    return { clause: "1 = 0", values: [] };
+    return withPeriod("1 = 0", []);
   }
 
-  return { clause: "1 = 1", values: [] };
+  return withPeriod("1 = 1", []);
 };
 
 const getDashboardData = async ({
@@ -29,8 +31,9 @@ const getDashboardData = async ({
   todayStart,
   tomorrowStart,
   trendStart,
+  periodStart,
 }) => {
-  const { clause, values } = getScopeFilter(scope);
+  const { clause, values } = getScopeFilter(scope, "c", periodStart);
 
   const [
     [overviewRows],
@@ -42,6 +45,7 @@ const getDashboardData = async ({
     [resolutionRows],
     [resolutionDepartmentRows],
     [overdueDepartmentRows],
+    [recentActivityRows],
   ] = await Promise.all([
     db.query(
       `SELECT
@@ -58,7 +62,7 @@ const getDashboardData = async ({
            c.due_at < ?
            AND c.status NOT IN (?)
          ) AS overdue,
-         SUM(c.ticket_priority = 'High') AS high_priority_count,
+         SUM(c.ticket_priority IN ('Critical', 'High')) AS high_priority_count,
          SUM(
            c.due_at >= ?
            AND c.due_at < ?
@@ -110,7 +114,7 @@ const getDashboardData = async ({
        FROM complaints c
        WHERE ${clause}
        GROUP BY c.ticket_priority
-       ORDER BY FIELD(c.ticket_priority, 'High', 'Medium', 'Low')`,
+       ORDER BY FIELD(c.ticket_priority, 'Critical', 'High', 'Medium', 'Low')`,
       values,
     ),
     db.query(
@@ -164,6 +168,17 @@ const getDashboardData = async ({
        ORDER BY value DESC, label ASC`,
       [...values, todayStart, FINAL_STATUSES],
     ),
+    db.query(
+      `SELECT c.id, c.token_number, c.status, c.ticket_priority,
+              c.updated_at, c.created_at,
+              COALESCE(d.name, 'Unassigned') AS department_name
+       FROM complaints c
+       LEFT JOIN departments d ON d.id = c.assigned_department_id
+       WHERE ${clause}
+       ORDER BY COALESCE(c.updated_at, c.created_at) DESC, c.id DESC
+       LIMIT 10`,
+      values,
+    ),
   ]);
 
   return {
@@ -176,6 +191,7 @@ const getDashboardData = async ({
     resolution: resolutionRows[0] || {},
     resolutionByDepartment: resolutionDepartmentRows,
     overdueByDepartment: overdueDepartmentRows,
+    recentActivity: recentActivityRows,
   };
 };
 

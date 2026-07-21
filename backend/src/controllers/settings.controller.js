@@ -17,9 +17,10 @@ const getCapabilities = (user) => ({
 
 const getGeneralSettings = async (req, res) => {
   try {
-    const [settings, updateMeta] = await Promise.all([
+    const [settings, updateMeta, version] = await Promise.all([
       SettingsService.getGeneralSettings(),
       SettingsModel.findLastGeneralSettingsUpdate(),
+      SettingsService.getGeneralSettingsVersion(),
     ]);
     return res.json({
       status: true,
@@ -30,6 +31,7 @@ const getGeneralSettings = async (req, res) => {
         capabilities: getCapabilities(req.user),
         last_updated_at: updateMeta?.updated_at || null,
         last_updated_by: updateMeta?.updated_by_name || null,
+        version,
       },
     });
   } catch (error) {
@@ -61,6 +63,7 @@ const updateGeneralSettings = async (req, res) => {
         capabilities: getCapabilities(req.user),
         last_updated_at: result.meta?.updated_at || null,
         last_updated_by: result.meta?.updated_by_name || req.user.name,
+        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {
@@ -93,6 +96,7 @@ const uploadAsset = (assetType) => async (req, res) => {
         capabilities: getCapabilities(req.user),
         last_updated_at: result.meta?.updated_at || null,
         last_updated_by: result.meta?.updated_by_name || req.user.name,
+        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {
@@ -149,6 +153,7 @@ const resetGeneralSettings = async (req, res) => {
         capabilities: getCapabilities(req.user),
         last_updated_at: result.meta?.updated_at || null,
         last_updated_by: result.meta?.updated_by_name || req.user.name,
+        version: await SettingsService.getGeneralSettingsVersion(),
       },
     });
   } catch (error) {

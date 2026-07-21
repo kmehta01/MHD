@@ -97,6 +97,12 @@ const dashboardWidgetPermissions = [
     "dashboard.charts.overdue_by_department",
     "View Overdue grievances by department chart",
   ],
+  [
+    "dashboard_activity",
+    "view_recent",
+    "dashboard.activity.recent",
+    "View Recent grievance activity",
+  ],
 ];
 const dashboardWidgetPermissionKeys = dashboardWidgetPermissions.map(
   (permission) => permission[2],
@@ -184,6 +190,10 @@ const permissions = [
   ["settings_general", "update", "settings.general.update", "Update General Settings"],
   ["settings_general", "reset", "settings.general.reset", "Restore default General Settings"],
   ["settings_general", "history", "settings.general.history", "View General Settings change history"],
+  ["settings_ticket_number", "view", "settings.ticket_number.view", "View Ticket Number Format settings"],
+  ["settings_ticket_number", "update", "settings.ticket_number.update", "Update Ticket Number Format settings"],
+  ["settings_ticket_number", "reset", "settings.ticket_number.reset", "Reset the active ticket sequence"],
+  ["settings_ticket_number", "history", "settings.ticket_number.history", "View Ticket Number Format history"],
   ["reports", "view_all", "reports.view_all", "View all reports"],
   [
     "reports",
@@ -235,6 +245,7 @@ const rolePermissions = {
     "users.delete",
     "users.manage_limited",
     "settings.general.view",
+    "settings.ticket_number.view",
     "reports.view_operational",
     "audit_logs.view_limited",
   ],

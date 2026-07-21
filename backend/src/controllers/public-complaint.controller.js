@@ -2,6 +2,17 @@ const fs = require("fs/promises");
 const path = require("path");
 const ComplaintModel = require("../models/complaint.model");
 const { recordAuditEvent } = require("../services/audit-log.service");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { verifyRecaptcha } = require("../services/recaptcha.service");
+const {
+  encryptText,
+  hashIdentificationNumber,
+  normalizeIdentificationNumber,
+} = require("../services/pii.service");
+const { generalSettingsDefaults } = require("../utils/default-general-settings");
+const ConfigurationModel = require("../models/configuration.model");
+const { resolveInitialRouting } = require("../services/routing.service");
+const NotificationService = require("../services/notification.service");
 
 const backendRoot = path.resolve(__dirname, "../..");
 const complaintUploadRoot = path.resolve(
@@ -10,21 +21,11 @@ const complaintUploadRoot = path.resolve(
   "complaints",
 );
 const STORED_COMPLAINT_FILE_PATTERN =
-  /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png)$/;
+  /^\d+-\d+\.(?:pdf|doc|docx|jpg|jpeg|png|xls|xlsx)$/;
 
-const ISSUE_LABELS = {
-  social_welfare: "Social welfare or assistance",
-  child_protection: "Child protection services",
-  family_support: "Family support services",
-  gbv_response: "Gender-based violence response",
-  elderly_support: "Elderly support services",
-  disability_services: "Disability services",
-  staff_conduct: "Staff conduct or behaviour",
-  corruption: "Corruption or unethical behaviour",
-  service_delays: "Service delays",
-  discrimination: "Discrimination",
-  policy: "Policy implementation",
-};
+const legacyIssueLabel = (value) => String(value || "")
+  .replaceAll("_", " ")
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
 
 const ALLOWED_ASSISTANCE = new Set([
   "Spanish",
@@ -43,7 +44,6 @@ const ALLOWED_CONTACT_PREFERENCES = new Set([
 ]);
 const ALLOWED_YES_NO = new Set(["yes", "no"]);
 const ALLOWED_PERMISSION = new Set(["yes", "no", "not_applicable"]);
-const ALLOWED_ISSUES = new Set(Object.keys(ISSUE_LABELS));
 const ALLOWED_CHANNELS = new Set([
   "in_person",
   "telephone",
@@ -161,8 +161,9 @@ const parseJsonArray = (value) => {
 };
 
 const getStoredIssueSummary = (complaint) => {
+  if (complaint?.category_name) return complaint.category_name;
   const labels = parseJsonArray(complaint?.issue_type)
-    .map((value) => ISSUE_LABELS[value] || value)
+    .map(legacyIssueLabel)
     .filter(Boolean);
 
   if (complaint?.issue_other) labels.push(complaint.issue_other);
@@ -175,13 +176,66 @@ const buildClientError = (message) => {
   return error;
 };
 
+const getPositiveId = (body, field) => {
+  const raw = getString(body, field);
+  if (!raw) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) throw buildClientError(`Invalid ${field.replace(/_/g, " ")}`);
+  return value;
+};
+
+const resolvePolicySelections = async (body, complaint, settings) => {
+  const categoryId = settings.grievanceSubmission.allowCitizenCategorySelection
+    ? getPositiveId(body, "category_id") : null;
+  const submittedDepartmentId = settings.grievanceSubmission.allowCitizenDepartmentSelection
+    ? getPositiveId(body, "department_id") : null;
+  const locationId = getPositiveId(body, "location_id");
+
+  if (settings.grievanceSubmission.allowCitizenCategorySelection && !categoryId) {
+    throw buildClientError("Complaint category is required");
+  }
+  if (settings.grievanceSubmission.allowCitizenDepartmentSelection && !submittedDepartmentId) {
+    throw buildClientError("Department is required");
+  }
+
+  const [category, department, location, status, priority] = await Promise.all([
+    categoryId ? ConfigurationModel.findActiveCatalogItem("complaint_categories", categoryId) : null,
+    submittedDepartmentId ? ConfigurationModel.findActiveCatalogItem("departments", submittedDepartmentId) : null,
+    locationId ? ConfigurationModel.findActiveCatalogItem("complaint_locations", locationId) : null,
+    ConfigurationModel.findStatusByName(complaint.initialStatus),
+    ConfigurationModel.findPriorityByName(complaint.ticketPriority),
+  ]);
+  if (categoryId && !category) throw buildClientError("Selected complaint category is unavailable");
+  if (submittedDepartmentId && !department) throw buildClientError("Selected department is unavailable");
+  if (locationId && !location) throw buildClientError("Selected location is unavailable");
+  if (!status) throw Object.assign(new Error("Configured default grievance status is unavailable"), { statusCode: 503 });
+  if (!priority) throw Object.assign(new Error("Configured default grievance priority is unavailable"), { statusCode: 503 });
+
+  const routing = await resolveInitialRouting({ settings, categoryId, submittedDepartmentId, locationId });
+  const issueSummary = category?.name || complaint.issueSummary;
+  return {
+    ...complaint, categoryId, submittedDepartmentId, locationId,
+    assignedDepartmentId: routing.departmentId, assignedOfficerId: routing.officerId,
+    routingRuleId: routing.ruleId, statusId: status.id, priorityId: priority.id,
+    complaintCategory: issueSummary,
+    complaintSubject: issueSummary,
+    issueSummary,
+    grievanceData: {
+      ...complaint.grievanceData,
+      issue_labels: category ? [category.name] : complaint.grievanceData.issue_labels,
+    },
+  };
+};
+
 const validateAllowedValues = (values, allowed, label) => {
   if (values.some((value) => !allowed.has(value))) {
     throw buildClientError(`Invalid ${label} selected`);
   }
 };
 
-const validateGrievanceBody = (body) => {
+const validateGrievanceBody = (body, settings = generalSettingsDefaults) => {
+  const submissionPolicy = settings.grievanceSubmission;
+  const privacyPolicy = settings.privacy;
   const assistance = getStringArray(body, "assistance");
   const assistanceOther = getString(body, "assistance_other");
   const submissionType = getString(body, "submission_type") || "named";
@@ -189,6 +243,7 @@ const validateGrievanceBody = (body) => {
   const compPhone = getString(body, "comp_phone");
   const compAddress = getString(body, "comp_address");
   const compEmail = getString(body, "comp_email");
+  const identificationNumber = getString(body, "identification_number");
   const contactPreference = getString(body, "contact_pref");
   const onBehalf = getString(body, "on_behalf");
   const affectedName = getString(body, "affected_name");
@@ -217,7 +272,9 @@ const validateGrievanceBody = (body) => {
   if (assistance.length > 1) {
     throw buildClientError("Only one language or assistance option may be selected");
   }
-  validateAllowedValues(issueTypes, ALLOWED_ISSUES, "issue type");
+  if (issueTypes.length > 10 || issueTypes.some((value) => value.length > 80 || !/^[a-z0-9_-]+$/i.test(value))) {
+    throw buildClientError("Invalid legacy issue type value");
+  }
   validateAllowedValues(channels, ALLOWED_CHANNELS, "contact channel");
   validateAllowedValues(
     accommodations,
@@ -230,6 +287,10 @@ const validateGrievanceBody = (body) => {
   }
 
   const isAnonymous = submissionType === "anonymous";
+
+  if (isAnonymous && !submissionPolicy.allowAnonymousComplaints) {
+    throw buildClientError("Anonymous grievances are not currently accepted");
+  }
 
   if (!isAnonymous) {
     if (!compName) throw buildClientError("Full name is required");
@@ -248,6 +309,16 @@ const validateGrievanceBody = (body) => {
       throw buildClientError(
         "A valid phone number is required for the selected contact method",
       );
+    }
+    if (submissionPolicy.mobileNumberRequired && getPhoneDigits(compPhone).length < 7) {
+      throw buildClientError("A valid mobile number is required");
+    }
+    if (submissionPolicy.emailAddressRequired && !compEmail) {
+      throw buildClientError("Email address is required");
+    }
+    if (submissionPolicy.identificationNumberRequired &&
+        normalizeIdentificationNumber(identificationNumber).length < 4) {
+      throw buildClientError("A valid identification number is required");
     }
     if (contactPreference === "email" && !compEmail) {
       throw buildClientError(
@@ -278,7 +349,7 @@ const validateGrievanceBody = (body) => {
     }
   }
 
-  if (!issueTypes.length && !issueOther) {
+  if (!submissionPolicy.allowCitizenCategorySelection && !issueTypes.length && !issueOther) {
     throw buildClientError(
       "Select at least one issue type or specify another issue",
     );
@@ -297,6 +368,11 @@ const validateGrievanceBody = (body) => {
   }
   if (!description) {
     throw buildClientError("Detailed description is required");
+  }
+  if (description.length > submissionPolicy.maximumDescriptionLength) {
+    throw buildClientError(
+      `Detailed description must be ${submissionPolicy.maximumDescriptionLength} characters or fewer`,
+    );
   }
   if (!desiredOutcome) {
     throw buildClientError("Desired outcome is required");
@@ -325,7 +401,7 @@ const validateGrievanceBody = (body) => {
       );
     }
   }
-  if (!declarationConfirmed) {
+  if ((submissionPolicy.displayDeclarationCheckbox || privacyPolicy.citizenConsentRequired) && !declarationConfirmed) {
     throw buildClientError("Declaration confirmation is required");
   }
   if (!isAnonymous && !signature) {
@@ -339,7 +415,7 @@ const validateGrievanceBody = (body) => {
   }
 
   const issueLabels = [
-    ...issueTypes.map((value) => ISSUE_LABELS[value]),
+    ...issueTypes.map(legacyIssueLabel),
     issueOther,
   ].filter(Boolean);
   const issueSummary =
@@ -378,7 +454,15 @@ const validateGrievanceBody = (body) => {
       hasWitnesses === "yes" ? witnessPhone.slice(0, 40) : null,
     accommodation: accommodations,
     accommodation_other: accommodationOther || null,
-    declaration_confirm: true,
+    declaration_confirm: declarationConfirmed,
+    identification_number_encrypted:
+      !isAnonymous && identificationNumber ? encryptText(identificationNumber) : null,
+    identification_number_hash:
+      !isAnonymous && identificationNumber ? hashIdentificationNumber(identificationNumber) : null,
+    identification_number_last4:
+      !isAnonymous && identificationNumber
+        ? normalizeIdentificationNumber(identificationNumber).slice(-4)
+        : null,
     signature: isAnonymous ? null : signature.slice(0, 160),
     declaration_date: declarationDate,
   };
@@ -396,7 +480,9 @@ const validateGrievanceBody = (body) => {
     complaintCategory: issueSummary.slice(0, 160),
     complaintSubject: issueLabels.join(", ").slice(0, 220),
     complaintDetails: description,
-    ticketPriority: "Medium",
+    ticketPriority: settings.assignment.defaultAssignmentPriority,
+    initialStatus: settings.workflow.defaultNewGrievanceStatus,
+    settings,
     incidentDate,
     locationDistrict: null,
     consentDeclaration: true,
@@ -409,7 +495,24 @@ const validateGrievanceBody = (body) => {
 
 const submitComplaint = async (req, res) => {
   try {
-    const complaint = validateGrievanceBody(req.body);
+    const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
+    if (settings.grievanceSubmission.enableCaptcha) {
+      const captchaToken = getString(req.body, "captchaToken") || getString(req.body, "captcha_token");
+      if (!captchaToken) throw buildClientError("Complete the CAPTCHA verification");
+      let captchaValid;
+      try {
+        captchaValid = await verifyRecaptcha(captchaToken, getIpAddress(req));
+      } catch (error) {
+        error.statusCode = 503;
+        throw error;
+      }
+      if (!captchaValid) throw buildClientError("CAPTCHA verification failed");
+    }
+    const complaint = await resolvePolicySelections(
+      req.body,
+      validateGrievanceBody(req.body, settings),
+      settings,
+    );
 
     if (complaint.grievanceData.has_documents === "no" && req.files?.length) {
       throw buildClientError(
@@ -434,12 +537,25 @@ const submitComplaint = async (req, res) => {
       attachments,
     });
 
+    try {
+      await NotificationService.enqueueComplaintEvent({
+        eventType: "submission", complaintId: created.id, eventKey: `submission:${created.id}`,
+      });
+      if (complaint.assignedDepartmentId) {
+        await NotificationService.enqueueComplaintEvent({
+          eventType: "assignment", complaintId: created.id, eventKey: `initial-assignment:${created.id}`,
+        });
+      }
+    } catch (notificationError) {
+      console.error("Failed to enqueue grievance notifications:", notificationError.message);
+    }
+
     return res.status(201).json({
       status: true,
       message: "Grievance submitted successfully",
       data: {
-        tokenNumber: created.tokenNumber,
-        status: "New",
+        ...(settings.ticket.displayTicketOnConfirmation ? { tokenNumber: created.tokenNumber } : {}),
+        status: complaint.initialStatus,
         isAnonymous: complaint.isAnonymous,
         issueSummary: complaint.issueSummary,
         incidentLocation: complaint.incidentLocation,
@@ -462,7 +578,12 @@ const submitComplaint = async (req, res) => {
 
 const submitAdminComplaint = async (req, res) => {
   try {
-    const complaint = validateGrievanceBody(req.body);
+    const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
+    const complaint = await resolvePolicySelections(
+      req.body,
+      validateGrievanceBody(req.body, settings),
+      settings,
+    );
     const receivedDate = getString(req.body, "office_received_date");
     const receivedBy = getString(req.body, "office_received_by");
     const classification = getString(
@@ -519,6 +640,19 @@ const submitAdminComplaint = async (req, res) => {
     });
 
     try {
+      await NotificationService.enqueueComplaintEvent({
+        eventType: "submission", complaintId: created.id, eventKey: `submission:${created.id}`,
+      });
+      if (complaint.assignedDepartmentId) {
+        await NotificationService.enqueueComplaintEvent({
+          eventType: "assignment", complaintId: created.id, eventKey: `initial-assignment:${created.id}`,
+        });
+      }
+    } catch (notificationError) {
+      console.error("Failed to enqueue walk-in grievance notifications:", notificationError.message);
+    }
+
+    try {
       await recordAuditEvent(req, {
         eventType: "ADMIN_GRIEVANCE_CREATED",
         resourceType: "complaint",
@@ -536,7 +670,7 @@ const submitAdminComplaint = async (req, res) => {
       message: "Walk-in grievance recorded successfully",
       data: {
         tokenNumber: created.tokenNumber,
-        status: "New",
+        status: complaint.initialStatus,
         isAnonymous: complaint.isAnonymous,
         issueSummary: complaint.issueSummary,
         incidentLocation: complaint.incidentLocation,
@@ -559,37 +693,62 @@ const submitAdminComplaint = async (req, res) => {
   }
 };
 
-const contactMatchesComplaint = (complaint, contactDetail) => {
+const contactMatchesComplaint = (complaint, contactDetail, method) => {
+  if (method === "Ticket Number Only") return true;
   const normalized = contactDetail.trim().toLowerCase();
   const digits = getPhoneDigits(contactDetail);
 
-  if (
-    digits.length >= 7 &&
-    digits === String(complaint.comp_phone_digits || "")
-  ) {
-    return true;
+  if (method === "Ticket Number and Phone Number") {
+    return digits.length >= 7 && digits === String(complaint.comp_phone_digits || "");
   }
+  if (method === "Ticket Number and Email Address") {
+    return Boolean(complaint.comp_email) &&
+      String(complaint.comp_email).trim().toLowerCase() === normalized;
+  }
+  if (method === "Ticket Number and Identification Number") {
+    return Boolean(complaint.identification_number_hash) &&
+      hashIdentificationNumber(contactDetail) === complaint.identification_number_hash;
+  }
+  return false;
+};
 
-  return [
-    complaint.comp_email,
-    complaint.comp_name,
-    complaint.comp_address,
-  ]
-    .filter(Boolean)
-    .some((value) => String(value).trim().toLowerCase() === normalized);
+const buildPublicTrackingData = (complaint, visibleFields) => {
+  const available = {
+    "Ticket Number": ["tokenNumber", complaint.token_number],
+    "Complaint Subject": ["issueSummary", getStoredIssueSummary(complaint)],
+    "Submission Date": ["submittedAt", toIso(complaint.created_at)],
+    "Assigned Department": ["assignedDepartment", complaint.assigned_department_name || "Unassigned"],
+    "Current Status": ["status", complaint.status],
+    "Last Updated Date": ["updatedAt", toIso(complaint.updated_at || complaint.created_at)],
+    "Resolution Summary": ["resolutionSummary", complaint.resolution_summary || null],
+    "Closure Date": ["closureDate", toIso(complaint.closed_at)],
+  };
+
+  return Object.fromEntries(
+    visibleFields
+      .filter((field) => available[field])
+      .map((field) => available[field]),
+  );
 };
 
 const getComplaintStatus = async (req, res) => {
   try {
+    const settings = req.generalSettings || (await SettingsPolicy.getPolicy());
+    const method = settings.ticket.trackingVerificationMethod;
     const tokenNumber = getString(req.body, "tokenNumber").toUpperCase();
     const contactDetail =
+      getString(req.body, "verificationDetail") ||
       getString(req.body, "contactDetail") ||
-      getString(req.body, "phoneNumber");
+      getString(req.body, "phoneNumber") ||
+      getString(req.body, "emailAddress") ||
+      getString(req.body, "identificationNumber");
 
-    if (!tokenNumber || !contactDetail) {
+    if (!tokenNumber || (method !== "Ticket Number Only" && !contactDetail)) {
       return res.status(400).json({
         status: false,
-        message: "Reference number and contact detail are required",
+        message: method === "Ticket Number Only"
+          ? "Reference number is required"
+          : "Reference number and verification detail are required",
       });
     }
 
@@ -597,8 +756,8 @@ const getComplaintStatus = async (req, res) => {
 
     if (
       !complaint ||
-      complaint.submission_type === "anonymous" ||
-      !contactMatchesComplaint(complaint, contactDetail)
+      (complaint.submission_type === "anonymous" && method !== "Ticket Number Only") ||
+      !contactMatchesComplaint(complaint, contactDetail, method)
     ) {
       return res.status(404).json({
         status: false,
@@ -608,15 +767,10 @@ const getComplaintStatus = async (req, res) => {
 
     return res.json({
       status: true,
-      data: {
-        tokenNumber: complaint.token_number,
-        status: complaint.status,
-        issueSummary: getStoredIssueSummary(complaint),
-        incidentLocation:
-          complaint.incident_location || "Not provided",
-        submittedAt: toIso(complaint.created_at),
-        updatedAt: toIso(complaint.updated_at),
-      },
+      data: buildPublicTrackingData(
+        complaint,
+        settings.privacy.publicTrackingDataVisibility,
+      ),
     });
   } catch (error) {
     return res.status(500).json({

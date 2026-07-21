@@ -115,6 +115,23 @@ const findLastGeneralSettingsUpdate = async () => {
   return rows[0] || null;
 };
 
+const findGeneralSettingsVersion = async () => {
+  const [rows] = await db.query(
+    `SELECT
+       COALESCE((SELECT MAX(id) FROM system_setting_logs), 0) AS revision,
+       COALESCE(UNIX_TIMESTAMP(MAX(updated_at)), 0) AS updated_at_epoch,
+       COUNT(*) AS setting_count
+     FROM system_settings
+     WHERE setting_group IN (
+       'organization', 'portal', 'grievanceSubmission', 'ticket', 'assignment',
+       'dueDate', 'workflow', 'notifications', 'security', 'privacy',
+       'dashboard', 'reports', 'footer'
+     )`,
+  );
+  const row = rows[0] || {};
+  return `${Number(row.revision || 0)}-${Number(row.updated_at_epoch || 0)}-${Number(row.setting_count || 0)}`;
+};
+
 const withTransaction = async (operation) => {
   const connection = await db.getConnection();
   try {
@@ -135,6 +152,7 @@ module.exports = {
   createSettingLog,
   findGeneralSettings,
   findGeneralSettingsHistory,
+  findGeneralSettingsVersion,
   findLastGeneralSettingsUpdate,
   findSettingForUpdate,
   updateSetting,

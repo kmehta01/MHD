@@ -19,15 +19,15 @@ const generalSettingDefinitions = [
   define("organization", "websiteUrl", "", "url", { maxLength: 500, isPublic: true }),
   define("organization", "officeAddress", "", "string", { maxLength: 500, isPublic: true }),
   define("organization", "country", "Belize", "string", { required: true, maxLength: 100, isPublic: true }),
-  define("organization", "defaultLocation", "Belize City", "string", { maxLength: 160 }),
+  define("organization", "defaultLocation", "Belize City", "string", { maxLength: 160, isPublic: true }),
   define("organization", "settingsUploadMaxKb", 2048, "number", { integer: true, min: 100, max: 5120 }),
 
   define("portal", "portalTitle", "Grievance Redress Management Portal", "string", { required: true, maxLength: 180, isPublic: true }),
   define("portal", "portalSubtitle", "Submit, track, and resolve grievances transparently", "string", { maxLength: 300, isPublic: true }),
-  define("portal", "defaultLanguage", "English", "string", { options: ["English", "Spanish"] }),
-  define("portal", "dateFormat", "DD/MM/YYYY", "string", { options: ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] }),
-  define("portal", "timeFormat", "12 Hour", "string", { options: ["12 Hour", "24 Hour"] }),
-  define("portal", "timeZone", "America/Belize", "string", { required: true, maxLength: 100 }),
+  define("portal", "defaultLanguage", "English", "string", { options: ["English", "Spanish"], isPublic: true }),
+  define("portal", "dateFormat", "DD/MM/YYYY", "string", { options: ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"], isPublic: true }),
+  define("portal", "timeFormat", "12 Hour", "string", { options: ["12 Hour", "24 Hour"], isPublic: true }),
+  define("portal", "timeZone", "America/Belize", "string", { required: true, maxLength: 100, isPublic: true }),
   define("portal", "recordsPerPage", 25, "number", { integer: true, min: 5, max: 200 }),
   define("portal", "defaultDashboardPeriod", "Last 30 Days", "string", { options: ["Last 7 Days", "Last 30 Days", "Current Month", "Current Quarter", "Current Year"] }),
   define("portal", "maintenanceMode", false, "boolean", { isPublic: true }),
@@ -35,27 +35,23 @@ const generalSettingDefinitions = [
 
   define("grievanceSubmission", "allowPublicSubmission", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "allowAnonymousComplaints", true, "boolean", { isPublic: true }),
-  define("grievanceSubmission", "citizenRegistrationRequired", false, "boolean", { isPublic: true }),
   define("grievanceSubmission", "mobileNumberRequired", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "emailAddressRequired", false, "boolean", { isPublic: true }),
   define("grievanceSubmission", "identificationNumberRequired", false, "boolean", { isPublic: true }),
   define("grievanceSubmission", "allowCitizenDepartmentSelection", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "allowCitizenCategorySelection", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "allowMultipleAttachments", true, "boolean", { isPublic: true }),
+  define("grievanceSubmission", "maximumAttachmentCount", 3, "number", { integer: true, min: 1, max: 10, isPublic: true }),
   define("grievanceSubmission", "maximumAttachmentSizeMb", 5, "number", { integer: true, min: 1, max: 25, isPublic: true }),
   define("grievanceSubmission", "allowedFileTypes", ["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX"], "json", { arrayOptions: ["PDF", "JPG", "JPEG", "PNG", "DOC", "DOCX", "XLS", "XLSX"], isPublic: true }),
   define("grievanceSubmission", "maximumDescriptionLength", 5000, "number", { integer: true, min: 250, max: 50000, isPublic: true }),
-  define("grievanceSubmission", "enableCaptcha", true, "boolean", { isPublic: true }),
+  define("grievanceSubmission", "enableCaptcha", false, "boolean", { isPublic: true }),
   define("grievanceSubmission", "displayDeclarationCheckbox", true, "boolean", { isPublic: true }),
   define("grievanceSubmission", "declarationText", "I confirm that the information provided is true and complete to the best of my knowledge.", "string", { maxLength: 1000, isPublic: true }),
 
-  define("ticket", "autoGenerateTicketNumber", true, "boolean"),
-  define("ticket", "ticketPrefix", "GRM", "string", { required: true, maxLength: 20, pattern: /^[A-Za-z0-9-]+$/ }),
-  define("ticket", "startingSequenceNumber", 1, "number", { integer: true, min: 1, max: 999999999 }),
-  define("ticket", "sequenceReset", "Yearly", "string", { options: ["Never", "Monthly", "Yearly"] }),
   define("ticket", "displayTicketOnConfirmation", true, "boolean", { isPublic: true }),
   define("ticket", "sendSubmissionAcknowledgement", true, "boolean"),
-  define("ticket", "acknowledgementMessage", "Your grievance has been received. Keep your ticket number for future tracking.", "string", { maxLength: 1000 }),
+  define("ticket", "acknowledgementMessage", "Your grievance has been received. Keep your ticket number for future tracking.", "string", { maxLength: 1000, isPublic: true }),
   define("ticket", "allowPublicTicketTracking", true, "boolean", { isPublic: true }),
   define("ticket", "trackingVerificationMethod", "Ticket Number and Phone Number", "string", { options: ["Ticket Number Only", "Ticket Number and Phone Number", "Ticket Number and Email Address", "Ticket Number and Identification Number"], isPublic: true }),
 
@@ -79,7 +75,7 @@ const generalSettingDefinitions = [
   define("dueDate", "enableEscalation", true, "boolean"),
   define("dueDate", "escalateAfterDays", 2, "number", { integer: true, min: 1, max: 365 }),
 
-  define("workflow", "defaultNewGrievanceStatus", "Submitted", "string", { options: ["Submitted", "Under Review", "Assigned", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned", "Overdue"] }),
+  define("workflow", "defaultNewGrievanceStatus", "New", "string", { options: ["New", "Under Review", "In Progress", "Pending Information", "Resolved", "Closed", "Rejected", "Duplicate", "Returned"] }),
   define("workflow", "adminReviewRequired", true, "boolean"),
   define("workflow", "departmentAcceptanceRequired", true, "boolean"),
   define("workflow", "adminApprovalBeforeClosure", true, "boolean"),
@@ -91,7 +87,7 @@ const generalSettingDefinitions = [
   define("workflow", "autoCloseAfterDays", 7, "number", { integer: true, min: 1, max: 365 }),
 
   ...[
-    ["enableEmailNotifications", true], ["enableDashboardNotifications", true], ["enableSmsNotifications", false], ["enableWhatsappNotifications", false],
+    ["enableEmailNotifications", true], ["enableDashboardNotifications", true],
     ["notifySuperAdminNewGrievance", true], ["notifyAdminNewGrievance", true], ["notifyDepartmentOnAssignment", true], ["notifyCitizenStatusChange", true],
     ["notifyDueDateReminder", true], ["notifyOverdueGrievance", true], ["notifyAdminResolutionSubmission", true], ["notifyDepartmentResolutionReturned", true], ["notifyCitizenGrievanceClosed", true],
   ].map(([key, value]) => define("notifications", key, value, "boolean")),
@@ -108,7 +104,6 @@ const generalSettingDefinitions = [
   define("security", "forcePasswordChangeFirstLogin", false, "boolean"),
   define("security", "enableTwoFactorAuthentication", false, "boolean"),
   define("security", "restrictConcurrentLogin", false, "boolean"),
-  define("security", "auditUserLoginActivity", true, "boolean"),
 
   define("privacy", "privacyNotice", "We collect only the information required to receive, investigate, and resolve grievances.", "string", { required: true, maxLength: 10000, isPublic: true }),
   define("privacy", "termsAndConditions", "By using this portal, you agree to provide accurate information and use the service lawfully.", "string", { required: true, maxLength: 10000, isPublic: true }),
@@ -145,7 +140,6 @@ const generalSettingDefinitions = [
   define("footer", "userGuideUrl", "", "url", { maxLength: 500, isPublic: true }),
   define("footer", "privacyPolicyUrl", "", "url", { maxLength: 500, isPublic: true }),
   define("footer", "termsConditionsUrl", "", "url", { maxLength: 500, isPublic: true }),
-  define("footer", "applicationVersion", "1.0.0", "string", { required: true, maxLength: 50, isPublic: true }),
 ];
 
 const generalSettingsDefaults = generalSettingDefinitions.reduce((groups, definition) => {
