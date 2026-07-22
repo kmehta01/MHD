@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const mysql = require("mysql2/promise");
 const { getTicketPeriod } = require("../src/utils/ticket-period-helper");
+const { generalSettingsDefaults } = require("../src/utils/default-general-settings");
 require("dotenv").config();
 
 const migrationPath = path.resolve(__dirname, "../../database/migrations/20260720_create_ticket_number_settings.sql");
@@ -41,7 +42,11 @@ const run = async () => {
        ) AS current_sequence`,
     );
     const currentSequence = Number(legacyRows[0]?.current_sequence || 0);
-    const period = getTicketPeriod({ prefix: "GRM", sequenceReset: "yearly" });
+    const [timeZoneRows] = await connection.query(
+      "SELECT setting_value FROM system_settings WHERE setting_key='portal.timeZone' LIMIT 1",
+    );
+    const timeZone = String(timeZoneRows[0]?.setting_value || generalSettingsDefaults.portal.timeZone).trim();
+    const period = getTicketPeriod({ prefix: "GRM", sequenceReset: "yearly", timeZone });
     const [lastTickets] = await connection.query("SELECT token_number, created_at FROM complaints ORDER BY id DESC LIMIT 1");
     await connection.query(
       `INSERT INTO ticket_sequences

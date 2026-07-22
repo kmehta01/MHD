@@ -19,6 +19,9 @@ const migrations = [
   ["20260723-attachment-policy", "apply-attachment-policy-migration.js"],
   ["20260724-due-date-policy", "apply-due-date-policy-migration.js"],
   ["20260725-site-directory", "apply-site-directory-migration.js"],
+  ["20260726-email-identity", "apply-email-identity-migration.js"],
+  ["20260727-complaint-enum-normalization", "apply-complaint-enum-normalization-migration.js"],
+  ["20260728-schema-contract-repair", "apply-schema-contract-repair-migration.js"],
 ];
 const requiredRuntimeTables = [
   "admin_audit_logs", "admin_auth_events", "admin_sessions",
@@ -29,6 +32,7 @@ const requiredRuntimeTables = [
   "complaint_assignment_history", "assignment_routing_rules", "public_holidays",
   "notification_outbox", "background_job_leases", "report_jobs",
   "grievance_form_options",
+  "complaint_intake_classifications",
   "department_public_contacts", "public_facilities", "facility_public_contacts", "public_social_links",
 ];
 
@@ -75,6 +79,10 @@ const run = async () => {
       SELECT
         (SELECT COUNT(*) FROM departments WHERE code IS NULL OR code='') AS missing_department_codes,
         (SELECT COUNT(*) FROM complaints WHERE status_id IS NULL OR priority_id IS NULL OR category_id IS NULL) AS complaints_missing_master_ids,
+        (SELECT COUNT(*) FROM information_schema.COLUMNS
+          WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='complaints'
+            AND COLUMN_NAME IN ('status','ticket_priority','contact_pref','submission_type','intake_source','office_initial_classification')
+            AND DATA_TYPE='enum') AS configurable_complaint_enums,
         (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
           WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='complaints'
             AND CONSTRAINT_NAME IN ('fk_complaints_status','fk_complaints_priority','fk_complaints_category',
@@ -82,6 +90,8 @@ const run = async () => {
         (SELECT COUNT(*) FROM system_settings WHERE setting_key IN
           ('workflow.resolutionDocumentMaximumSizeMb','workflow.resolutionDocumentAllowedFileTypes')) AS attachment_policy_settings,
         (SELECT COUNT(*) FROM system_settings WHERE setting_key='organization.officialPhoneLabel') AS directory_settings,
+        (SELECT COUNT(*) FROM system_settings WHERE setting_key IN
+          ('email.subjectPrefix','email.replyToAddress','email.footerText')) AS email_identity_settings,
         (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
           WHERE CONSTRAINT_SCHEMA=DATABASE() AND CONSTRAINT_NAME IN
           ('fk_department_public_contact_department','fk_public_facility_department','fk_facility_public_contact_facility')) AS directory_foreign_keys
@@ -93,8 +103,10 @@ const run = async () => {
     const presentTables = new Set(runtimeTables.map((row) => row.TABLE_NAME));
     const missingTables = requiredRuntimeTables.filter((table) => !presentTables.has(table));
     if (missingTables.length || Number(health.missing_department_codes) || Number(health.complaints_missing_master_ids) ||
+        Number(health.configurable_complaint_enums) ||
         Number(health.master_foreign_keys) !== 6 || Number(health.attachment_policy_settings) !== 2 ||
-        Number(health.directory_settings) !== 1 || Number(health.directory_foreign_keys) !== 3) {
+        Number(health.directory_settings) !== 1 || Number(health.email_identity_settings) !== 3 ||
+        Number(health.directory_foreign_keys) !== 3) {
       health.missing_runtime_tables = missingTables;
       throw new Error(`Post-migration database validation failed: ${JSON.stringify(health)}`);
     }

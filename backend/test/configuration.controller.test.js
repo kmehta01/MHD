@@ -3,6 +3,8 @@ const test = require("node:test");
 const db = require("../src/config/db");
 const ConfigurationModel = require("../src/models/configuration.model");
 const controller = require("../src/controllers/configuration.controller");
+const AuditLogService = require("../src/services/audit-log.service");
+const TicketSettingsService = require("../src/services/ticket-settings.service");
 
 test.after(async () => db.end());
 
@@ -52,6 +54,7 @@ test("workflow transitions require two active status IDs", async (t) => {
 
 test("form-option updates preserve immutable key and group", async (t) => {
   let saved;
+  t.mock.method(AuditLogService, "recordAuditEvent", async () => null);
   t.mock.method(ConfigurationModel, "getFormOption", async () => ({ id: 12, option_group: "assistance", option_key: "large_print" }));
   t.mock.method(ConfigurationModel, "saveFormOption", async (item) => { saved = item; return 12; });
   const res = response();
@@ -85,4 +88,44 @@ test("form-option deactivation protects the last required choice", async (t) => 
   await controller.deactivateFormOption({ params: { id: "8" } }, res);
   assert.equal(res.statusCode, 409);
   assert.deepEqual(res.body.dependencies, { remainingActive: 0 });
+});
+
+test("intake-classification updates preserve immutable keys", async (t) => {
+  let saved;
+  t.mock.method(AuditLogService, "recordAuditEvent", async () => null);
+  t.mock.method(ConfigurationModel, "getIntakeClassification", async () => ({ id: 4, classification_key: "level_4" }));
+  t.mock.method(ConfigurationModel, "saveIntakeClassification", async (item) => { saved = item; return 4; });
+  const res = response();
+  await controller.saveIntakeClassification({
+    params: { id: "4" }, user: { id: 1 },
+    body: { key: "rewritten", name: "Urgent review", helpText: "Same behavior", sortOrder: 5, isActive: true },
+  }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(saved.key, undefined);
+  assert.equal(saved.name, "Urgent review");
+});
+
+test("intake-classification deactivation reports active grievance dependencies", async (t) => {
+  t.mock.method(ConfigurationModel, "getIntakeClassification", async () => ({ id: 2 }));
+  t.mock.method(ConfigurationModel, "getIntakeClassificationDependencies", async () => ({ activeComplaints: 2 }));
+  const res = response();
+  await controller.deactivateIntakeClassification({ params: { id: "2" } }, res);
+  assert.equal(res.statusCode, 409);
+  assert.deepEqual(res.body.dependencies, { activeComplaints: 2 });
+});
+
+test("public catalog adds only a synthetic ticket example and tolerates example failure", async (t) => {
+  t.mock.method(ConfigurationModel, "listPublicCatalog", async () => ({ categories: [], locations: [], departments: [], formOptions: {} }));
+  t.mock.method(TicketSettingsService, "getPublicExample", async () => "CASE-2030-0001");
+  const available = response();
+  await controller.getPublicCatalog({}, available);
+  assert.equal(available.body.data.ticketNumberExample, "CASE-2030-0001");
+  assert.equal(Object.hasOwn(available.body.data, "currentSequence"), false);
+  assert.equal(Object.hasOwn(available.body.data, "nextSequence"), false);
+
+  TicketSettingsService.getPublicExample.mock.mockImplementation(async () => { throw new Error("Unavailable"); });
+  const unavailable = response();
+  await controller.getPublicCatalog({}, unavailable);
+  assert.equal(unavailable.statusCode, 200);
+  assert.equal(unavailable.body.data.ticketNumberExample, null);
 });

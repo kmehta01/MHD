@@ -19,14 +19,14 @@ const sendError = (res, error, fallback) => res.status(error.statusCode || 500).
 const getTicketSettings = async (req, res) => {
   try {
     const data = await TicketSettingsService.getSettings();
-    return res.json({ success: true, status: true, data, meta: { capabilities: capabilities(req.user) } });
+    return res.json({ success: true, status: true, data, meta: { capabilities: capabilities(req.user), timeZone: data.timeZone } });
   } catch (error) { return sendError(res, error, "Failed to fetch Ticket Number Format settings"); }
 };
 
 const previewTicketSettings = async (req, res) => {
   try {
     const data = await TicketSettingsService.preview(req.ticketPreviewSettings);
-    return res.json({ success: true, status: true, data });
+    return res.json({ success: true, status: true, data, meta: { timeZone: data.timeZone } });
   } catch (error) { return sendError(res, error, "Failed to preview the ticket number"); }
 };
 

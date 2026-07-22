@@ -6,45 +6,35 @@ const createComplaintTables = async (connection) => {
       id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
       token_number VARCHAR(32) NULL,
       assigned_department_id INT UNSIGNED NULL,
-      ticket_priority ENUM('Low', 'Medium', 'High', 'Critical') NOT NULL DEFAULT 'Medium',
+      ticket_priority VARCHAR(80) NULL,
       incident_date DATE NULL,
-      status ENUM(
-        'New',
-        'Under Review',
-        'In Progress',
-        'Pending Information',
-        'Resolved',
-        'Closed',
-        'Rejected',
-        'Duplicate',
-        'Returned'
-      ) NOT NULL DEFAULT 'New',
+      status VARCHAR(80) NULL,
       due_at DATETIME NULL,
       resolved_at DATETIME NULL,
       closed_at DATETIME NULL,
       assistance VARCHAR(80) NULL,
       assistance_other VARCHAR(500) NULL,
-      submission_type ENUM('named', 'anonymous') NOT NULL DEFAULT 'named',
+      submission_type VARCHAR(32) NOT NULL DEFAULT 'named',
       comp_name VARCHAR(160) NULL,
       comp_phone VARCHAR(40) NULL,
       comp_phone_digits VARCHAR(32) NULL,
       comp_address TEXT NULL,
       comp_email VARCHAR(190) NULL,
-      contact_pref ENUM('phone', 'email', 'mail', 'in_person', 'whatsapp') NULL,
-      on_behalf ENUM('yes', 'no') NULL,
+      contact_pref VARCHAR(80) NULL,
+      on_behalf TINYINT(1) NULL,
       affected_name VARCHAR(160) NULL,
       relationship VARCHAR(160) NULL,
-      permission ENUM('yes', 'no', 'not_applicable') NULL,
+      permission VARCHAR(32) NULL,
       issue_type JSON NULL,
       issue_other VARCHAR(255) NULL,
       channel JSON NULL,
       incident_location VARCHAR(255) NULL,
       description TEXT NULL,
       desired_outcome TEXT NULL,
-      tried_resolve ENUM('yes', 'no') NULL,
+      tried_resolve TINYINT(1) NULL,
       prev_attempts TEXT NULL,
-      has_documents ENUM('yes', 'no') NULL,
-      has_witnesses ENUM('yes', 'no') NULL,
+      has_documents TINYINT(1) NULL,
+      has_witnesses TINYINT(1) NULL,
       witness_name VARCHAR(160) NULL,
       witness_phone VARCHAR(40) NULL,
       accommodation JSON NULL,
@@ -52,10 +42,10 @@ const createComplaintTables = async (connection) => {
       declaration_confirm TINYINT(1) NOT NULL DEFAULT 0,
       signature VARCHAR(160) NULL,
       declaration_date DATE NULL,
-      intake_source ENUM('public', 'walk_in') NOT NULL DEFAULT 'public',
+      intake_source VARCHAR(32) NOT NULL DEFAULT 'public',
       office_received_at DATETIME NULL,
       office_received_by VARCHAR(120) NULL,
-      office_initial_classification ENUM('Level 1', 'Level 2', 'Level 3', 'Level 4') NULL,
+      office_initial_classification VARCHAR(80) NULL,
       office_assigned_to VARCHAR(160) NULL,
       created_by_admin_user_id INT UNSIGNED NULL,
       ip_address VARCHAR(64) NULL,
@@ -81,12 +71,12 @@ const createComplaintTables = async (connection) => {
     ["assigned_department_id", "INT UNSIGNED NULL AFTER token_number"],
     [
       "ticket_priority",
-      "ENUM('Low', 'Medium', 'High', 'Critical') NOT NULL DEFAULT 'Medium' AFTER assigned_department_id",
+      "VARCHAR(80) NULL AFTER assigned_department_id",
     ],
     ["incident_date", "DATE NULL AFTER ticket_priority"],
     [
       "status",
-      "ENUM('New', 'Under Review', 'In Progress', 'Pending Information', 'Resolved', 'Closed', 'Rejected', 'Duplicate', 'Returned') NOT NULL DEFAULT 'New' AFTER incident_date",
+      "VARCHAR(80) NULL AFTER incident_date",
     ],
     ["due_at", "DATETIME NULL AFTER status"],
     ["resolved_at", "DATETIME NULL AFTER due_at"],
@@ -95,7 +85,7 @@ const createComplaintTables = async (connection) => {
     ["assistance_other", "VARCHAR(500) NULL AFTER assistance"],
     [
       "submission_type",
-      "ENUM('named', 'anonymous') NOT NULL DEFAULT 'named' AFTER assistance_other",
+      "VARCHAR(32) NOT NULL DEFAULT 'named' AFTER assistance_other",
     ],
     ["comp_name", "VARCHAR(160) NULL AFTER submission_type"],
     ["comp_phone", "VARCHAR(40) NULL AFTER comp_name"],
@@ -107,14 +97,14 @@ const createComplaintTables = async (connection) => {
     ["identification_number_last4", "VARCHAR(4) NULL AFTER identification_number_hash"],
     [
       "contact_pref",
-      "ENUM('phone', 'email', 'mail', 'in_person', 'whatsapp') NULL AFTER identification_number_last4",
+      "VARCHAR(80) NULL AFTER identification_number_last4",
     ],
-    ["on_behalf", "ENUM('yes', 'no') NULL AFTER contact_pref"],
+    ["on_behalf", "TINYINT(1) NULL AFTER contact_pref"],
     ["affected_name", "VARCHAR(160) NULL AFTER on_behalf"],
     ["relationship", "VARCHAR(160) NULL AFTER affected_name"],
     [
       "permission",
-      "ENUM('yes', 'no', 'not_applicable') NULL AFTER relationship",
+      "VARCHAR(32) NULL AFTER relationship",
     ],
     ["issue_type", "JSON NULL AFTER permission"],
     ["issue_other", "VARCHAR(255) NULL AFTER issue_type"],
@@ -123,10 +113,10 @@ const createComplaintTables = async (connection) => {
     ["description", "TEXT NULL AFTER incident_location"],
     ["desired_outcome", "TEXT NULL AFTER description"],
     ["resolution_summary", "TEXT NULL AFTER desired_outcome"],
-    ["tried_resolve", "ENUM('yes', 'no') NULL AFTER desired_outcome"],
+    ["tried_resolve", "TINYINT(1) NULL AFTER desired_outcome"],
     ["prev_attempts", "TEXT NULL AFTER tried_resolve"],
-    ["has_documents", "ENUM('yes', 'no') NULL AFTER prev_attempts"],
-    ["has_witnesses", "ENUM('yes', 'no') NULL AFTER has_documents"],
+    ["has_documents", "TINYINT(1) NULL AFTER prev_attempts"],
+    ["has_witnesses", "TINYINT(1) NULL AFTER has_documents"],
     ["witness_name", "VARCHAR(160) NULL AFTER has_witnesses"],
     ["witness_phone", "VARCHAR(40) NULL AFTER witness_name"],
     ["accommodation", "JSON NULL AFTER witness_phone"],
@@ -139,13 +129,13 @@ const createComplaintTables = async (connection) => {
     ["declaration_date", "DATE NULL AFTER signature"],
     [
       "intake_source",
-      "ENUM('public', 'walk_in') NOT NULL DEFAULT 'public' AFTER declaration_date",
+      "VARCHAR(32) NOT NULL DEFAULT 'public' AFTER declaration_date",
     ],
     ["office_received_at", "DATETIME NULL AFTER intake_source"],
     ["office_received_by", "VARCHAR(120) NULL AFTER office_received_at"],
     [
       "office_initial_classification",
-      "ENUM('Level 1', 'Level 2', 'Level 3', 'Level 4') NULL AFTER office_received_by",
+      "VARCHAR(80) NULL AFTER office_received_by",
     ],
     ["office_assigned_to", "VARCHAR(160) NULL AFTER office_initial_classification"],
     [
@@ -200,48 +190,15 @@ const createComplaintTables = async (connection) => {
      } NULL`,
   );
 
-  await connection.query(`
-    ALTER TABLE complaints
-    MODIFY COLUMN ticket_priority ENUM('Low', 'Medium', 'High', 'Critical')
-    NOT NULL DEFAULT 'Medium'
-  `);
-
-  await connection.query(`
-    ALTER TABLE complaints
-    MODIFY COLUMN status ENUM(
-      'New',
-      'In Review',
-      'Under Review',
-      'In Progress',
-      'Pending Information',
-      'Resolved',
-      'Closed',
-      'Rejected',
-      'Duplicate',
-      'Returned'
-    ) NOT NULL DEFAULT 'New'
-  `);
+  await connection.query(`ALTER TABLE complaints
+    MODIFY COLUMN ticket_priority VARCHAR(80) NULL,
+    MODIFY COLUMN status VARCHAR(80) NULL`);
 
   await connection.query(
     `UPDATE complaints
      SET status = 'Under Review'
      WHERE status = 'In Review'`,
   );
-
-  await connection.query(`
-    ALTER TABLE complaints
-    MODIFY COLUMN status ENUM(
-      'New',
-      'Under Review',
-      'In Progress',
-      'Pending Information',
-      'Resolved',
-      'Closed',
-      'Rejected',
-      'Duplicate',
-      'Returned'
-    ) NOT NULL DEFAULT 'New'
-  `);
 
   await connection.query(`
     UPDATE complaints

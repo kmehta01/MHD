@@ -1,5 +1,11 @@
 const NotificationModel = require("../models/notification.model");
 const { recordAuditEvent } = require("../services/audit-log.service");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { resolveEmailIdentity } = require("../services/mail.service");
+const {
+  SUPPORTED_NOTIFICATION_TEMPLATE_VARIABLES,
+  validateNotificationTemplateInput,
+} = require("../config/notification-template-variables");
 
 const getNotifications = async (req, res) => {
   try {
@@ -25,24 +31,44 @@ const markAllNotificationsRead = async (req, res) => {
 };
 
 const getTemplates = async (_req, res) => {
-  try { return res.json({ status: true, data: await NotificationModel.listTemplates() }); }
+  try {
+    const [templates, settings] = await Promise.all([
+      NotificationModel.listTemplates(),
+      SettingsPolicy.getPolicy(),
+    ]);
+    const identity = resolveEmailIdentity(settings);
+    return res.json({
+      status: true,
+      data: templates,
+      meta: {
+        supportedVariables: SUPPORTED_NOTIFICATION_TEMPLATE_VARIABLES,
+        emailIdentity: {
+          subjectPrefix: identity.subjectPrefix,
+          replyToAddress: identity.replyToAddress,
+          emailFooterText: identity.emailFooterText,
+        },
+      },
+    });
+  }
   catch (error) { return res.status(500).json({ status: false, message: "Failed to load notification templates" }); }
 };
 
 const saveTemplate = async (req, res) => {
   try {
     const id = req.params.id ? Number(req.params.id) : null;
-    const eventType = String(req.body.eventType || "").trim();
-    const channel = String(req.body.channel || "").trim();
-    const name = String(req.body.name || "").trim();
-    const bodyTemplate = String(req.body.bodyTemplate || "").trim();
-    if (!eventType || !["email", "dashboard"].includes(channel) || !name || !bodyTemplate) {
-      return res.status(400).json({ status: false, message: "Event type, channel, name, and body template are required" });
+    const validation = validateNotificationTemplateInput(req.body);
+    if (validation.error) {
+      return res.status(400).json({
+        status: false,
+        message: validation.error,
+        ...(validation.unknownVariables ? { errors: { variables: validation.unknownVariables } } : {}),
+      });
     }
+    const { eventType, channel, name, subjectTemplate, bodyTemplate, isActive } = validation.value;
     const templateId = await NotificationModel.saveTemplate({
       id, eventType, channel, name,
-      subjectTemplate: String(req.body.subjectTemplate || "").trim(), bodyTemplate,
-      isActive: req.body.isActive !== false,
+      subjectTemplate, bodyTemplate,
+      isActive,
     });
     if (!templateId) return res.status(404).json({ status: false, message: "Notification template not found" });
     try { await recordAuditEvent(req, { eventType: "CONFIGURATION_UPDATED", resourceType: "notification_template", resourceId: templateId }); } catch {}

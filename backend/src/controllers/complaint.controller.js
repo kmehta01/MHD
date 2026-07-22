@@ -35,6 +35,7 @@ const parseJsonArray = (value) => {
     return [];
   }
 };
+const booleanChoice = (value) => value === null || value === undefined ? null : (Boolean(value) ? "yes" : "no");
 
 const getIssueSummary = (complaint) => {
   if (complaint.category_name) return complaint.category_name;
@@ -58,7 +59,7 @@ const normalizeGrievanceData = (complaint, privacy = {}, revealPii = false) => (
     ? (() => { try { return decryptText(complaint.identification_number_encrypted); } catch { return null; } })()
     : complaint.identification_number_last4 ? `****${complaint.identification_number_last4}` : null,
   contact_pref: complaint.contact_pref,
-  on_behalf: complaint.on_behalf,
+  on_behalf: booleanChoice(complaint.on_behalf),
   affected_name: complaint.affected_name,
   relationship: complaint.relationship,
   permission: complaint.permission,
@@ -69,10 +70,10 @@ const normalizeGrievanceData = (complaint, privacy = {}, revealPii = false) => (
   incident_location: complaint.incident_location,
   description: complaint.description,
   desired_outcome: complaint.desired_outcome,
-  tried_resolve: complaint.tried_resolve,
+  tried_resolve: booleanChoice(complaint.tried_resolve),
   prev_attempts: complaint.prev_attempts,
-  has_documents: complaint.has_documents,
-  has_witnesses: complaint.has_witnesses,
+  has_documents: booleanChoice(complaint.has_documents),
+  has_witnesses: booleanChoice(complaint.has_witnesses),
   witness_name: complaint.witness_name,
   witness_phone: complaint.witness_phone,
   accommodation: parseJsonArray(complaint.accommodation),
@@ -145,7 +146,9 @@ const normalizeComplaintDetail = (complaint, privacy = {}, revealPii = false) =>
           intakeSource: complaint.intake_source,
           receivedDate: toDateOnly(complaint.office_received_at),
           receivedBy: complaint.office_received_by,
-          initialClassification: complaint.office_initial_classification,
+          initialClassificationId: complaint.office_initial_classification_id,
+          initialClassificationKey: complaint.office_initial_classification_key,
+          initialClassification: complaint.office_initial_classification_name || complaint.office_initial_classification,
           assignedTo: complaint.office_assigned_to,
           createdByAdminUserId: complaint.created_by_admin_user_id,
         }
@@ -385,11 +388,12 @@ const getComplaintById = async (req, res) => {
 
 const getComplaintOptions = async (_req, res) => {
   try {
-    const [workflow, settings, catalog, officers, formOptions, holidays] = await Promise.all([
+    const [workflow, settings, catalog, officers, formOptions, holidays, intakeClassifications] = await Promise.all([
       ConfigurationModel.listWorkflow(), SettingsPolicy.getPolicy(),
       ConfigurationModel.listPublicCatalog(), ConfigurationModel.listAssignableOfficers(),
       ConfigurationModel.listFormOptions(),
       ConfigurationModel.listHolidays(),
+      ConfigurationModel.listIntakeClassifications({ activeOnly: true }),
     ]);
     return res.json({
       status: true,
@@ -401,6 +405,7 @@ const getComplaintOptions = async (_req, res) => {
         categories: catalog.categories,
         locations: catalog.locations,
         formOptions,
+        intakeClassifications,
         capabilities: { attachments: { types: publicAttachmentTypes() } },
         officers,
         policy: {

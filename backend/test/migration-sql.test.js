@@ -60,6 +60,17 @@ test("grievance-form migration preserves compatibility while seeding stable choi
   assert.doesNotMatch(sql, /UPDATE complaints SET issue_type/i);
 });
 
+test("complaint enum normalization adds dynamic classifications and removes configurable enums", () => {
+  const sql = fs.readFileSync(path.resolve(__dirname, "../../database/migrations/20260727_complaint_enum_normalization.sql"), "utf8");
+  assert.match(sql, /CREATE TABLE IF NOT EXISTS complaint_intake_classifications/i);
+  assert.match(sql, /office_initial_classification_id/i);
+  assert.match(sql, /MODIFY COLUMN status VARCHAR\(80\) NULL/i);
+  assert.match(sql, /MODIFY COLUMN ticket_priority VARCHAR\(80\) NULL/i);
+  assert.match(sql, /MODIFY COLUMN contact_pref VARCHAR\(80\) NULL/i);
+  assert.match(sql, /MODIFY COLUMN on_behalf TINYINT\(1\) NULL/i);
+  assert.doesNotMatch(sql, /(?:status|ticket_priority|contact_pref|submission_type|intake_source|office_initial_classification)\s+ENUM/i);
+});
+
 test("attachment migration copies the installed complaint policy into independent workflow settings", () => {
   const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-attachment-policy-migration.js"), "utf8");
   assert.match(source, /grievanceSubmission\.maximumAttachmentSizeMb/);
@@ -90,4 +101,18 @@ test("site-directory migration preserves existing contacts and immutable catalog
   assert.match(source, /golden_haven/);
   assert.match(source, /senior\.secretary@humandev\.gov\.bz/);
   assert.match(source, /ON DUPLICATE KEY UPDATE/);
+});
+
+test("email identity migration is private, idempotent, and preserves configured values", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-email-identity-migration.js"), "utf8");
+  for (const key of ["email.subjectPrefix", "email.replyToAddress", "email.footerText"]) assert.match(source, new RegExp(key.replace(".", "\\.")));
+  assert.match(source, /ON DUPLICATE KEY UPDATE/);
+  assert.match(source, /is_public=0/);
+  assert.doesNotMatch(source, /setting_value=VALUES\(setting_value\)/);
+});
+
+test("ticket installer migration initializes its period from the configured portal timezone", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-ticket-number-migration.js"), "utf8");
+  assert.match(source, /setting_key='portal\.timeZone'/);
+  assert.match(source, /getTicketPeriod\(\{ prefix: "GRM", sequenceReset: "yearly", timeZone \}\)/);
 });

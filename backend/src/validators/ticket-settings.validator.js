@@ -1,8 +1,10 @@
 const { validateTicketSettings } = require("../utils/ticket-format-parser");
+const SettingsPolicy = require("../services/settings-policy.service");
+const { requireTicketTimeZone } = require("../utils/ticket-period-helper");
 
 const cleanText = (value) => String(value ?? "").replace(/\0/g, "").trim();
 
-const validateTicketSettingsPayload = (req, res, next) => {
+const validateTicketSettingsPayload = async (req, res, next) => {
   const input = req.body?.settings || req.body;
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return res.status(400).json({ status: false, success: false, message: "Settings payload must be an object" });
@@ -17,7 +19,13 @@ const validateTicketSettingsPayload = (req, res, next) => {
   for (const key of Object.keys(input)) {
     if (![...allowed, "reason", "settings"].includes(key)) errors[key] = "Unknown setting";
   }
-  const validation = validateTicketSettings(input);
+  let policy;
+  try { policy = await SettingsPolicy.getPolicy(); }
+  catch { return res.status(503).json({ status: false, success: false, message: "Current portal timezone could not be loaded" }); }
+  let timeZone;
+  try { timeZone = requireTicketTimeZone(policy?.portal?.timeZone); }
+  catch { return res.status(503).json({ status: false, success: false, message: "Current portal timezone is unavailable" }); }
+  const validation = validateTicketSettings(input, { timeZone });
   Object.assign(errors, validation.errors);
   const reason = cleanText(req.body?.reason);
   if (reason.length > 500) errors.reason = "Reason must be 500 characters or fewer";

@@ -1,5 +1,6 @@
 const ConfigurationModel = require("../models/configuration.model");
-const { recordAuditEvent } = require("../services/audit-log.service");
+const AuditLogService = require("../services/audit-log.service");
+const TicketSettingsService = require("../services/ticket-settings.service");
 
 const positiveId = (value, label = "ID") => {
   const id = Number(value);
@@ -24,27 +25,75 @@ const sendError = (res, error, fallback) => {
 };
 
 const audit = async (req, eventType, resourceType, resourceId) => {
-  try { await recordAuditEvent(req, { eventType, resourceType, resourceId }); }
+  try { await AuditLogService.recordAuditEvent(req, { eventType, resourceType, resourceId }); }
   catch (error) { console.error(`Failed to audit ${eventType}:`, error.message); }
 };
 
 const getPublicCatalog = async (_req, res) => {
-  try { return res.json({ status: true, data: await ConfigurationModel.listPublicCatalog() }); }
+  try {
+    const [catalog, ticketNumberExample] = await Promise.all([
+      ConfigurationModel.listPublicCatalog(),
+      TicketSettingsService.getPublicExample().catch(() => null),
+    ]);
+    return res.json({ status: true, data: { ...catalog, ticketNumberExample } });
+  }
   catch (error) { return sendError(res, error, "Failed to load grievance options"); }
 };
 
 const getConfiguration = async (_req, res) => {
   try {
-    const [categories, locations, departments, holidays, routingRules, workflow, officers, publicCatalog, formOptions] = await Promise.all([
+    const [categories, locations, departments, holidays, routingRules, workflow, officers, publicCatalog, formOptions, intakeClassifications] = await Promise.all([
       ConfigurationModel.listCatalog("categories"), ConfigurationModel.listCatalog("locations"),
       ConfigurationModel.listCatalog("departments"),
       ConfigurationModel.listHolidays(), ConfigurationModel.listRoutingRules(),
       ConfigurationModel.listWorkflow(), ConfigurationModel.listAssignableOfficers(),
       ConfigurationModel.listPublicCatalog(),
       ConfigurationModel.listFormOptions(),
+      ConfigurationModel.listIntakeClassifications(),
     ]);
-    return res.json({ status: true, data: { categories, locations, departments, categoryMappings: publicCatalog.categories.map(({ id, departmentIds }) => ({ categoryId: id, departmentIds })), formOptions, holidays, routingRules, workflow, officers } });
+    return res.json({ status: true, data: { categories, locations, departments, categoryMappings: publicCatalog.categories.map(({ id, departmentIds }) => ({ categoryId: id, departmentIds })), formOptions, intakeClassifications, holidays, routingRules, workflow, officers } });
   } catch (error) { return sendError(res, error, "Failed to load configuration"); }
+};
+
+const getIntakeClassifications = async (_req, res) => {
+  try {
+    return res.json({ status: true, data: await ConfigurationModel.listIntakeClassifications() });
+  } catch (error) { return sendError(res, error, "Failed to load intake classifications"); }
+};
+
+const saveIntakeClassification = async (req, res) => {
+  try {
+    const id = req.params.id ? positiveId(req.params.id) : null;
+    if (id && !await ConfigurationModel.getIntakeClassification(id)) {
+      return res.status(404).json({ status: false, message: "Intake classification not found" });
+    }
+    if (id && req.body.isActive === false) {
+      const dependencies = await ConfigurationModel.getIntakeClassificationDependencies(id);
+      if (Object.values(dependencies).some(Boolean)) return res.status(409).json({ status: false, message: "This classification is used by active grievances", dependencies });
+    }
+    const itemId = await ConfigurationModel.saveIntakeClassification({
+      id,
+      key: id ? undefined : normalizedKey(req.body.key, "Classification key"),
+      name: requiredText(req.body.name, "Display name", 80),
+      helpText: String(req.body.helpText || "").trim().slice(0, 255) || null,
+      sortOrder: Math.max(0, Number.parseInt(req.body.sortOrder, 10) || 0),
+      isActive: req.body.isActive !== false,
+    });
+    await audit(req, "CONFIGURATION_UPDATED", "intake_classification", itemId);
+    return res.status(id ? 200 : 201).json({ status: true, data: { id: itemId } });
+  } catch (error) { return sendError(res, error, "Failed to save intake classification"); }
+};
+
+const deactivateIntakeClassification = async (req, res) => {
+  try {
+    const id = positiveId(req.params.id);
+    if (!await ConfigurationModel.getIntakeClassification(id)) return res.status(404).json({ status: false, message: "Intake classification not found" });
+    const dependencies = await ConfigurationModel.getIntakeClassificationDependencies(id);
+    if (Object.values(dependencies).some(Boolean)) return res.status(409).json({ status: false, message: "This classification is used by active grievances", dependencies });
+    await ConfigurationModel.deactivateIntakeClassification(id);
+    await audit(req, "CONFIGURATION_UPDATED", "intake_classification", id);
+    return res.json({ status: true, message: "Intake classification deactivated" });
+  } catch (error) { return sendError(res, error, "Failed to deactivate intake classification"); }
 };
 
 const saveCatalogItem = async (req, res) => {
@@ -292,4 +341,4 @@ const deactivateHoliday = async (req, res) => {
   } catch (error) { return sendError(res, error, "Failed to deactivate holiday"); }
 };
 
-module.exports = { deactivateCatalogItem, deactivateFormOption, deactivateHoliday, deactivateRoutingRule, deactivateWorkflowItem, getConfiguration, getPublicCatalog, saveCatalogItem, saveCategoryMappings, saveFormOption, saveHoliday, savePriority, saveRoutingRule, saveStatus, saveTransition };
+module.exports = { deactivateCatalogItem, deactivateFormOption, deactivateHoliday, deactivateIntakeClassification, deactivateRoutingRule, deactivateWorkflowItem, getConfiguration, getIntakeClassifications, getPublicCatalog, saveCatalogItem, saveCategoryMappings, saveFormOption, saveHoliday, saveIntakeClassification, savePriority, saveRoutingRule, saveStatus, saveTransition };

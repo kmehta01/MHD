@@ -1837,7 +1837,7 @@ function SubmitComplaint() {
                         tokenNumber: event.target.value,
                       }))
                     }
-                    placeholder="GRM-2026-06-0001"
+                    placeholder={catalog.ticketNumberExample || "Enter your reference number"}
                     type="text"
                     value={statusLookup.tokenNumber}
                   />

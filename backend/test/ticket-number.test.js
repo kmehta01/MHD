@@ -2,12 +2,16 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { buildTicketNumber, DEFAULT_TICKET_NUMBER_SETTINGS, validateTicketSettings } = require("../src/utils/ticket-format-parser");
-const { getTicketPeriod } = require("../src/utils/ticket-period-helper");
+const { buildTicketNumber: formatTicketNumber, DEFAULT_TICKET_NUMBER_SETTINGS, validateTicketSettings } = require("../src/utils/ticket-format-parser");
+const { getTicketPeriod: calculateTicketPeriod } = require("../src/utils/ticket-period-helper");
 const { generateTicketNumber } = require("../src/services/ticket-number-generator.service");
 const { requireTicketSettingsPermission, requireTicketSettingsSuperAdmin } = require("../src/middlewares/ticket-settings-access.middleware");
 
 const fixedDate = new Date("2026-07-20T12:00:00Z");
+const timeZone = "America/Belize";
+const runtimeSettings = { portal: { timeZone } };
+const buildTicketNumber = (options) => formatTicketNumber({ ...options, timeZone });
+const getTicketPeriod = (options) => calculateTicketPeriod({ ...options, timeZone });
 const settings = (changes = {}) => ({ ...DEFAULT_TICKET_NUMBER_SETTINGS, ...changes });
 const row = (changes = {}) => {
   const value = settings(changes);
@@ -107,14 +111,14 @@ const createLockedRepositories = ({ existing = [] } = {}) => {
 test("concurrent grievance allocations remain unique", async () => {
   const repositories = createLockedRepositories();
   const results = await Promise.all(Array.from({ length: 25 }, (_, id) =>
-    generateTicketNumber({ transaction: { id }, repositories, date: fixedDate })));
+    generateTicketNumber({ transaction: { id }, repositories, date: fixedDate, runtimeSettings })));
   assert.equal(new Set(results.map((item) => item.ticketNumber)).size, 25);
   assert.equal(repositories.current, 25);
 });
 
 test("duplicate ticket prevention skips an existing permanent number", async () => {
   const repositories = createLockedRepositories({ existing: ["GRM-2026-000001"] });
-  const result = await generateTicketNumber({ transaction: { id: 1 }, repositories, date: fixedDate });
+  const result = await generateTicketNumber({ transaction: { id: 1 }, repositories, date: fixedDate, runtimeSettings });
   assert.equal(result.ticketNumber, "GRM-2026-000002");
 });
 
@@ -158,7 +162,7 @@ test("reassignment code cannot rewrite a generated ticket number", () => {
 
 test("complaint creation allocates inside its transaction and rolls back failures", () => {
   const source = fs.readFileSync(path.resolve(__dirname, "../src/models/complaint.model.js"), "utf8");
-  assert.match(source, /generateTicketNumber\(\{ transaction: connection \}\)/);
+  assert.match(source, /generateTicketNumber\(\{ transaction: connection, runtimeSettings: complaint\.settings \}\)/);
   assert.match(source, /catch \(error\) \{\s*await connection\.rollback\(\)/);
-  assert.ok(source.indexOf("generateTicketNumber({ transaction: connection })") < source.indexOf("INSERT INTO complaints SET ?"));
+  assert.ok(source.indexOf("generateTicketNumber({ transaction: connection, runtimeSettings: complaint.settings })") < source.indexOf("INSERT INTO complaints SET ?"));
 });

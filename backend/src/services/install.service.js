@@ -3,7 +3,7 @@ const path = require("path");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
-const { ensureForeignKeys, readCompatibleMigration } = require("../utils/migration-sql");
+const { ensureForeignKeys } = require("../utils/migration-sql");
 const {
   generalSettingDefinitions,
 } = require("../utils/default-general-settings");
@@ -18,13 +18,6 @@ const adminEnvPath = path.join(adminPanelRoot, ".env");
 const frontendEnvPath = path.join(frontendRoot, ".env");
 const lockPath = path.join(backendRoot, "install.lock");
 const sqlPath = path.join(projectRoot, "database", "database.sql");
-const installMigrationPaths = [
-  path.join(projectRoot, "database", "migrations", "20260720_runtime_general_settings.sql"),
-  path.join(projectRoot, "database", "migrations", "20260720_grievance_lifecycle.sql"),
-  path.join(projectRoot, "database", "migrations", "20260721_master_data_runtime.sql"),
-  path.join(projectRoot, "database", "migrations", "20260722_grievance_form_options.sql"),
-  path.join(projectRoot, "database", "migrations", "20260720_operational_runtime.sql"),
-];
 const masterDataForeignKeys = [
   ["fk_complaints_status", "complaints", "status_id", "complaint_statuses", "id"],
   ["fk_complaints_priority", "complaints", "priority_id", "complaint_priorities", "id"],
@@ -32,6 +25,7 @@ const masterDataForeignKeys = [
   ["fk_complaints_location", "complaints", "location_id", "complaint_locations", "id"],
   ["fk_complaints_submitted_department", "complaints", "submitted_department_id", "departments", "id"],
   ["fk_complaints_assigned_department", "complaints", "assigned_department_id", "departments", "id"],
+  ["fk_complaints_intake_classification", "complaints", "office_initial_classification_id", "complaint_intake_classifications", "id"],
 ];
 
 const installerTables = [
@@ -40,6 +34,10 @@ const installerTables = [
   "notification_outbox",
   "notification_templates",
   "background_job_leases",
+  "facility_public_contacts",
+  "public_facilities",
+  "department_public_contacts",
+  "public_social_links",
   "complaint_resolution_documents",
   "complaint_internal_comments",
   "complaint_escalations",
@@ -55,12 +53,14 @@ const installerTables = [
   "complaint_categories",
   "complaint_priorities",
   "complaint_statuses",
+  "complaint_intake_classifications",
   "public_holidays",
   "admin_sessions",
   "ticket_number_setting_logs",
   "ticket_sequences",
   "ticket_number_settings",
   "complaint_attachments",
+  "complaint_reference_sequences",
   "complaints",
   "admin_two_factor_recovery_codes",
   "admin_two_factor_challenges",
@@ -73,6 +73,39 @@ const installerTables = [
   "admin_users",
   "departments",
   "roles",
+  "schema_migrations",
+];
+
+const baselineEmptyTables = [
+  "admin_audit_logs",
+  "admin_auth_events",
+  "admin_notifications",
+  "admin_sessions",
+  "admin_two_factor_challenges",
+  "admin_two_factor_recovery_codes",
+  "admin_users",
+  "assignment_routing_rules",
+  "background_job_leases",
+  "complaints",
+  "complaint_assignment_history",
+  "complaint_attachments",
+  "complaint_escalations",
+  "complaint_internal_comments",
+  "complaint_reassignment_requests",
+  "complaint_reference_sequences",
+  "complaint_resolution_documents",
+  "complaint_status_history",
+  "department_public_contacts",
+  "due_date_extension_requests",
+  "facility_public_contacts",
+  "notification_outbox",
+  "public_facilities",
+  "public_holidays",
+  "public_social_links",
+  "report_jobs",
+  "system_setting_logs",
+  "ticket_number_setting_logs",
+  "ticket_sequences",
 ];
 
 class InstallerError extends Error {
@@ -340,12 +373,50 @@ const normalizeConfig = (input = {}) => {
 
 const resetManagedTables = async (connection) => {
   await connection.query("SET FOREIGN_KEY_CHECKS = 0");
-
-  for (const table of installerTables) {
-    await connection.query(`DROP TABLE IF EXISTS \`${table}\``);
+  try {
+    for (const table of installerTables) {
+      await connection.query(`DROP TABLE IF EXISTS \`${table}\``);
+    }
+  } finally {
+    await connection.query("SET FOREIGN_KEY_CHECKS = 1");
   }
+};
 
-  await connection.query("SET FOREIGN_KEY_CHECKS = 1");
+const getExistingManagedTables = async (connection) => {
+  const [rows] = await connection.query(
+    `SELECT TABLE_NAME
+       FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN (?)
+      ORDER BY TABLE_NAME`,
+    [installerTables],
+  );
+  return rows.map((row) => row.TABLE_NAME);
+};
+
+const assertInstallationTargetEmpty = async (connection) => {
+  const existingTables = await getExistingManagedTables(connection);
+  if (existingTables.length) {
+    throw new InstallerError(
+      "The target database already contains GRM tables. Enable the reset option for a fresh installation or run npm run migrate:all to upgrade it.",
+      409,
+      { existing_tables: existingTables },
+    );
+  }
+};
+
+const validateSanitizedBaseline = async (connection) => {
+  const contaminated = [];
+  for (const table of baselineEmptyTables) {
+    const [[row]] = await connection.query(`SELECT COUNT(*) AS records FROM \`${table}\``);
+    if (Number(row.records) !== 0) contaminated.push(table);
+  }
+  if (contaminated.length) {
+    throw new InstallerError(
+      "database.sql contains operational records and cannot be used for a fresh installation",
+      500,
+      { contaminated_tables: contaminated },
+    );
+  }
 };
 
 const runSchema = async (connection) => {
@@ -357,13 +428,17 @@ const runSchema = async (connection) => {
 
   const sql = fs.readFileSync(sqlPath, "utf8");
   await connection.query(sql);
-  for (const migrationPath of installMigrationPaths) {
-    if (!fs.existsSync(migrationPath)) {
-      throw new InstallerError("Required database migration not found", 500, { path: migrationPath });
-    }
-    await connection.query(await readCompatibleMigration(connection, migrationPath));
-  }
   await ensureForeignKeys(connection, masterDataForeignKeys);
+  const [[unmapped]] = await connection.query(`SELECT
+    SUM(status_id IS NULL) AS missing_status,
+    SUM(priority_id IS NULL) AS missing_priority FROM complaints`);
+  if (Number(unmapped.missing_status) || Number(unmapped.missing_priority)) {
+    throw new InstallerError("Complaint master-data backfill left unmapped records", 500, unmapped);
+  }
+  await connection.query(`ALTER TABLE complaints
+    MODIFY COLUMN status_id SMALLINT UNSIGNED NOT NULL,
+    MODIFY COLUMN priority_id SMALLINT UNSIGNED NOT NULL`);
+  await validateSanitizedBaseline(connection);
 };
 
 const createSuperAdmin = async (connection, config) => {
@@ -435,6 +510,66 @@ const validateAttachmentPolicyInstallation = async (connection) => {
   }
 };
 
+const validateSchemaInstallation = async (connection, adminEmail) => {
+  const existingTables = new Set(await getExistingManagedTables(connection));
+  const missingTables = installerTables.filter((table) => !existingTables.has(table));
+  const requiredColumns = [
+    ["complaints", "resolution_summary"],
+    ["complaints", "status_id"],
+    ["complaints", "priority_id"],
+    ["complaints", "identification_number_encrypted"],
+    ["complaints", "identification_number_hash"],
+    ["complaints", "identification_number_last4"],
+    ["admin_users", "profile_photo"],
+    ["admin_users", "must_change_password"],
+  ];
+  const [columns] = await connection.query(
+    `SELECT TABLE_NAME, COLUMN_NAME
+       FROM information_schema.COLUMNS
+      WHERE TABLE_SCHEMA=DATABASE()
+        AND TABLE_NAME IN ('complaints','admin_users')`,
+  );
+  const installedColumns = new Set(columns.map((column) => `${column.TABLE_NAME}.${column.COLUMN_NAME}`));
+  const missingColumns = requiredColumns
+    .map(([table, column]) => `${table}.${column}`)
+    .filter((column) => !installedColumns.has(column));
+  const [[health]] = await connection.query(`SELECT
+    (SELECT COUNT(*) FROM roles WHERE slug='super-admin' AND is_active=1) AS super_admin_role,
+    (SELECT COUNT(*) FROM admin_users u JOIN roles r ON r.id=u.role_id
+      WHERE u.email=? AND u.status='active' AND r.slug='super-admin') AS super_admin_user,
+    (SELECT COUNT(*) FROM complaint_statuses WHERE is_active=1) AS statuses,
+    (SELECT COUNT(*) FROM complaint_priorities WHERE is_active=1) AS priorities,
+    (SELECT COUNT(*) FROM permissions WHERE is_active=1) AS permissions,
+    (SELECT COUNT(*) FROM notification_templates WHERE is_active=1) AS notification_templates,
+    (SELECT COUNT(*) FROM system_settings) AS settings,
+    (SELECT COUNT(*) FROM schema_migrations
+      WHERE migration_key='20260728-schema-contract-repair') AS schema_contract,
+    (SELECT COUNT(*) FROM information_schema.REFERENTIAL_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='complaints'
+        AND CONSTRAINT_NAME IN
+          ('fk_complaints_status','fk_complaints_priority','fk_complaints_category',
+           'fk_complaints_location','fk_complaints_submitted_department',
+           'fk_complaints_assigned_department','fk_complaints_intake_classification')) AS complaint_foreign_keys`,
+    [adminEmail],
+  );
+  const invalidHealth = Number(health.super_admin_role) !== 1 ||
+    Number(health.super_admin_user) !== 1 ||
+    Number(health.statuses) < 9 ||
+    Number(health.priorities) < 4 ||
+    Number(health.permissions) < 1 ||
+    Number(health.notification_templates) < 1 ||
+    Number(health.settings) < 1 ||
+    Number(health.schema_contract) !== 1 ||
+    Number(health.complaint_foreign_keys) !== 7;
+  if (missingTables.length || missingColumns.length || invalidHealth) {
+    throw new InstallerError("Installed database failed schema validation", 500, {
+      missing_tables: missingTables,
+      missing_columns: missingColumns,
+      health,
+    });
+  }
+};
+
 const buildClientEnvironmentFiles = (config) => ({
   admin: buildEnv({
     VITE_API_BASE_URL: config.api_base_url,
@@ -486,16 +621,19 @@ const writeEnvironmentFiles = (config) => {
   fs.writeFileSync(frontendEnvPath, clientEnvironment.frontend);
 };
 
-const createInstallLock = () => {
+const createInstallLock = (targetPath = lockPath) => {
   fs.writeFileSync(
-    lockPath,
+    targetPath,
     `Installed on ${new Date().toISOString()}\n`,
     "utf8",
   );
 };
 
-const runInstaller = async (input = {}) => {
-  if (fs.existsSync(lockPath)) {
+const runInstaller = async (input = {}, options = {}) => {
+  const activeLockPath = options.lockPath || lockPath;
+  const createConnection = options.createConnection || mysql.createConnection;
+  const persistEnvironment = options.writeEnvironmentFiles || writeEnvironmentFiles;
+  if (fs.existsSync(activeLockPath)) {
     throw new InstallerError("Project is already installed", 403);
   }
 
@@ -503,7 +641,7 @@ const runInstaller = async (input = {}) => {
   let connection;
 
   try {
-    connection = await mysql.createConnection({
+    connection = await createConnection({
       host: config.db_host,
       user: config.db_user,
       password: config.db_password,
@@ -515,14 +653,17 @@ const runInstaller = async (input = {}) => {
 
     if (config.reset_database) {
       await resetManagedTables(connection);
+    } else {
+      await assertInstallationTargetEmpty(connection);
     }
 
     await runSchema(connection);
     await createSuperAdmin(connection, config);
     await seedGeneralSettings(connection);
     await validateAttachmentPolicyInstallation(connection);
-    writeEnvironmentFiles(config);
-    createInstallLock();
+    await validateSchemaInstallation(connection, config.admin_email);
+    persistEnvironment(config);
+    createInstallLock(activeLockPath);
 
     return {
       status: true,
@@ -539,7 +680,10 @@ const runInstaller = async (input = {}) => {
 module.exports = {
   buildClientEnvironmentFiles,
   InstallerError,
+  assertInstallationTargetEmpty,
   getInstallerStatus,
+  installerTables,
   normalizeConfig,
   runInstaller,
+  validateSchemaInstallation,
 };

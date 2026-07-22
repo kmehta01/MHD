@@ -34,9 +34,8 @@ const DEFAULT_TICKET_NUMBER_SETTINGS = {
   sequencePadding: true,
 };
 
-const normalizeCode = (value, fallback, field, preview) => {
+const normalizeCode = (value, field) => {
   const normalized = String(value || "").trim().toUpperCase();
-  if (!normalized && preview) return fallback;
   if (!/^[A-Z0-9-]{1,20}$/.test(normalized)) {
     const error = new Error(`${field} code is required and must use letters, numbers, or hyphens`);
     error.code = "TICKET_CONTEXT_REQUIRED";
@@ -45,7 +44,7 @@ const normalizeCode = (value, fallback, field, preview) => {
   return normalized;
 };
 
-const validateTicketSettings = (input, { partial = false } = {}) => {
+const validateTicketSettings = (input, { partial = false, timeZone } = {}) => {
   const source = partial ? { ...DEFAULT_TICKET_NUMBER_SETTINGS, ...input } : input;
   const errors = {};
   const warnings = [];
@@ -112,7 +111,13 @@ const validateTicketSettings = (input, { partial = false } = {}) => {
   const result = { ...source, ...normalized };
   if (!Object.keys(errors).length) {
     try {
-      buildTicketNumber({ settings: result, sequence: 999999999999, preview: true });
+      const maximumCode = "A".repeat(20);
+      buildTicketNumber({
+        settings: result,
+        sequence: 999999999999,
+        context: { departmentCode: maximumCode, locationCode: maximumCode, categoryCode: maximumCode },
+        timeZone,
+      });
     } catch (error) {
       errors.ticketFormat = error.message;
     }
@@ -123,8 +128,8 @@ const validateTicketSettings = (input, { partial = false } = {}) => {
 const applyConfiguredSeparator = (format, separator) =>
   format.replace(/}[-/_]+{/g, `}${separator}{`);
 
-const buildTicketNumber = ({ settings, sequence, context = {}, date = new Date(), preview = false }) => {
-  const parts = getTicketDateParts(date);
+const buildTicketNumber = ({ settings, sequence, context = {}, date = new Date(), timeZone }) => {
+  const parts = getTicketDateParts(date, timeZone);
   const prefix = settings.letterCase === "preserve"
     ? settings.ticketPrefix
     : settings.letterCase === "lowercase"
@@ -134,17 +139,17 @@ const buildTicketNumber = ({ settings, sequence, context = {}, date = new Date()
     ? String(sequence).padStart(settings.sequenceLength, "0")
     : String(sequence);
   let output = applyConfiguredSeparator(settings.ticketFormat, settings.separator);
-  const contextValue = (variable, value, fallback, field) =>
-    output.includes(variable) ? normalizeCode(value, fallback, field, preview) : "";
+  const contextValue = (variable, value, field) =>
+    output.includes(variable) ? normalizeCode(value, field) : "";
   const values = {
     "{PREFIX}": prefix,
     "{YEAR}": settings.yearFormat === "two_digit" ? parts.year.slice(-2) : parts.year,
     "{YEAR_SHORT}": parts.year.slice(-2),
     "{MONTH}": parts.month,
     "{DAY}": parts.day,
-    "{DEPARTMENT}": contextValue("{DEPARTMENT}", context.departmentCode, "DEP", "Department"),
-    "{LOCATION}": contextValue("{LOCATION}", context.locationCode, "LOC", "Location"),
-    "{CATEGORY}": contextValue("{CATEGORY}", context.categoryCode, "CAT", "Category"),
+    "{DEPARTMENT}": contextValue("{DEPARTMENT}", context.departmentCode, "Department"),
+    "{LOCATION}": contextValue("{LOCATION}", context.locationCode, "Location"),
+    "{CATEGORY}": contextValue("{CATEGORY}", context.categoryCode, "Category"),
     "{SEQUENCE}": sequenceValue,
   };
   for (const [variable, value] of Object.entries(values)) output = output.split(variable).join(value);

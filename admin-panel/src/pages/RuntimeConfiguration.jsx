@@ -10,6 +10,7 @@ const emptyRule = { name: "", matchType: "category", matchValue: "", departmentI
 const emptyStatus = { key: "", name: "", reportingGroup: "open", notificationEvent: "status_change", isFinal: false, isActive: true, sortOrder: 100 };
 const emptyPriority = { key: "", name: "", isHighPriority: false, isActive: true, sortOrder: 100 };
 const emptyFormOption = { group: "assistance", key: "", label: "", helpText: "", contactRequirement: "none", sortOrder: 100, isActive: true };
+const emptyIntakeClassification = { key: "", name: "", helpText: "", sortOrder: 100, isActive: true };
 const emptyDepartmentProfile = { id: "", name: "", address: "", summary: "", iconKey: "building", sortOrder: 100, isVisible: false };
 const emptyFacility = { key: "", departmentId: "", name: "", description: "", address: "", sortOrder: 100, isActive: true };
 const emptyContact = { ownerType: "department", ownerId: "", key: "", type: "phone", label: "Telephone", displayValue: "", linkValue: "", sortOrder: 100, isActive: true };
@@ -36,6 +37,7 @@ const RuntimeConfiguration = () => {
   const mode = setting || module || "runtime";
   const [data, setData] = useState(null);
   const [templates, setTemplates] = useState([]);
+  const [templateMeta, setTemplateMeta] = useState({ supportedVariables: [], emailIdentity: {} });
   const [catalogForm, setCatalogForm] = useState(emptyCatalog);
   const [holidayForm, setHolidayForm] = useState(emptyHoliday);
   const [ruleForm, setRuleForm] = useState(emptyRule);
@@ -43,6 +45,7 @@ const RuntimeConfiguration = () => {
   const [priorityForm, setPriorityForm] = useState(emptyPriority);
   const [formOptionForm, setFormOptionForm] = useState(emptyFormOption);
   const [formOptionFilter, setFormOptionFilter] = useState("all");
+  const [intakeClassificationForm, setIntakeClassificationForm] = useState(emptyIntakeClassification);
   const [departmentProfileForm, setDepartmentProfileForm] = useState(emptyDepartmentProfile);
   const [facilityForm, setFacilityForm] = useState(emptyFacility);
   const [contactForm, setContactForm] = useState(emptyContact);
@@ -60,7 +63,10 @@ const RuntimeConfiguration = () => {
     let responseIndex = 1;
     const directory = needsDirectory ? responses[responseIndex++].data.data : undefined;
     setData({ ...responses[0].data.data, ...(directory ? { siteDirectory: directory } : {}) });
-    if (mode === "notification-templates") setTemplates(responses[responseIndex]?.data.data || []);
+    if (mode === "notification-templates") {
+      setTemplates(responses[responseIndex]?.data.data || []);
+      setTemplateMeta(responses[responseIndex]?.data.meta || { supportedVariables: [], emailIdentity: {} });
+    }
   }, [mode]);
 
   useEffect(() => {
@@ -121,6 +127,15 @@ const RuntimeConfiguration = () => {
       "Grievance form option saved.",
     );
     setFormOptionForm(emptyFormOption);
+  };
+  const saveIntakeClassification = (event) => {
+    event.preventDefault();
+    const endpoint = `/configuration/intake-classifications${intakeClassificationForm.id ? `/${intakeClassificationForm.id}` : ""}`;
+    execute(
+      () => intakeClassificationForm.id ? API.put(endpoint, intakeClassificationForm) : API.post(endpoint, intakeClassificationForm),
+      "Intake classification saved.",
+    );
+    setIntakeClassificationForm(emptyIntakeClassification);
   };
   const saveDepartmentProfile = (event) => {
     event.preventDefault();
@@ -264,7 +279,18 @@ const RuntimeConfiguration = () => {
         <section className="panel runtime-config-list"><h2>Existing grievance recalculation</h2><p>Preview policy effects before applying them to existing open grievances.</p><button className="button button-secondary" onClick={() => execute(async () => { const response = await API.get("/complaints/due-date-recalculation/preview"); setPreview(response.data.data); }, "Preview loaded.")} type="button">Preview recalculation</button>{preview.length ? <><p>{preview.length} open grievances evaluated.</p><button className="button button-primary" onClick={() => execute(() => API.post("/complaints/due-date-recalculation/apply", { confirmation: "RECALCULATE OPEN GRIEVANCE DUE DATES", complaintIds: preview.map((item) => item.id) }), "Due dates recalculated.")} type="button">Apply previewed changes</button></> : null}</section>
       </> : null}
 
-      {mode === "notification-templates" ? <section className="panel runtime-config-list"><h2>Notification templates</h2>{templates.map((template, index) => <div className="notification-template-editor" key={template.id}><input onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} value={template.name} /><input disabled={template.channel !== "email"} onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subject_template: event.target.value } : item))} placeholder="Email subject" value={template.subject_template || ""} /><textarea onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, body_template: event.target.value } : item))} value={template.body_template} /><button className="button button-secondary" disabled={busy} onClick={() => saveTemplate(template)} type="button"><Icon name="check" size={15} /> Save</button></div>)}</section> : null}
+      {mode === "notification-templates" ? <section className="panel runtime-config-list">
+        <h2>Notification templates</h2>
+        <p>Supported variables: {(templateMeta.supportedVariables || []).map((key) => `{{${key}}}`).join(", ")}</p>
+        <p><strong>Effective email identity:</strong> {templateMeta.emailIdentity?.subjectPrefix ? `[${templateMeta.emailIdentity.subjectPrefix}] ` : "No subject prefix"} · Reply-To: {templateMeta.emailIdentity?.replyToAddress || "sender mailbox"} · Footer: {templateMeta.emailIdentity?.emailFooterText || "none"}</p>
+        {templates.map((template, index) => <div className="notification-template-editor" key={template.id}>
+          <input maxLength="160" onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} value={template.name} />
+          <input disabled={template.channel !== "email"} maxLength="255" onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, subject_template: event.target.value } : item))} placeholder="Email subject" required={template.channel === "email"} value={template.subject_template || ""} />
+          {template.channel === "email" ? <small>Preview: {templateMeta.emailIdentity?.subjectPrefix ? `[${templateMeta.emailIdentity.subjectPrefix}] ` : ""}{template.subject_template || "Email subject"}</small> : null}
+          <textarea maxLength="10000" onChange={(event) => setTemplates((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, body_template: event.target.value } : item))} value={template.body_template} />
+          <button className="button button-secondary" disabled={busy} onClick={() => saveTemplate(template)} type="button"><Icon name="check" size={15} /> Save</button>
+        </div>)}
+      </section> : null}
 
       {mode === "grievance-form-options" ? <>
         <form className="panel runtime-config-form" onSubmit={saveFormOption}>
@@ -288,6 +314,19 @@ const RuntimeConfiguration = () => {
             .filter((item) => formOptionFilter === "all" || item.group === formOptionFilter)
             .map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.label}</strong><small>{item.group} · {item.key} · order {item.sortOrder} · {item.isActive ? "Active" : "Inactive"}{item.group === "contact_preference" ? ` · requires ${item.contactRequirement}` : ""}</small>{item.helpText ? <small>{item.helpText}</small> : null}</span><div><button onClick={() => setFormOptionForm({ ...item })} type="button">Edit</button>{item.isActive ? <button onClick={() => execute(() => API.delete(`/configuration/form-options/${item.id}`), "Grievance form option deactivated.")} type="button">Deactivate</button> : null}</div></div>)}
         </section>
+      </> : null}
+
+      {mode === "intake-classifications" ? <>
+        <form className="panel runtime-config-form" onSubmit={saveIntakeClassification}>
+          <input disabled={Boolean(intakeClassificationForm.id)} maxLength="50" onChange={(event) => setIntakeClassificationForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable key" required value={intakeClassificationForm.key} />
+          <input maxLength="80" onChange={(event) => setIntakeClassificationForm((item) => ({ ...item, name: event.target.value }))} placeholder="Display name" required value={intakeClassificationForm.name} />
+          <textarea maxLength="255" onChange={(event) => setIntakeClassificationForm((item) => ({ ...item, helpText: event.target.value }))} placeholder="Help text" value={intakeClassificationForm.helpText || ""} />
+          <input min="0" onChange={(event) => setIntakeClassificationForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={intakeClassificationForm.sortOrder} />
+          <label><input checked={intakeClassificationForm.isActive} onChange={(event) => setIntakeClassificationForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save classification</button>
+          {intakeClassificationForm.id ? <button onClick={() => setIntakeClassificationForm(emptyIntakeClassification)} type="button">Cancel</button> : null}
+        </form>
+        <section className="panel runtime-config-list"><h2>Office intake classifications</h2>{(data.intakeClassifications || []).map((item) => <div className="runtime-config-row" key={item.id}><span><strong>{item.name}</strong><small>{item.classification_key} · order {item.sort_order} · {item.is_active ? "Active" : "Inactive"}</small>{item.help_text ? <small>{item.help_text}</small> : null}</span><div><button onClick={() => setIntakeClassificationForm({ id: item.id, key: item.classification_key, name: item.name, helpText: item.help_text || "", sortOrder: item.sort_order, isActive: Boolean(item.is_active) })} type="button">Edit</button>{item.is_active ? <button onClick={() => execute(() => API.delete(`/configuration/intake-classifications/${item.id}`), "Intake classification deactivated.")} type="button">Deactivate</button> : null}</div></div>)}</section>
       </> : null}
 
       {mode === "status" ? <>

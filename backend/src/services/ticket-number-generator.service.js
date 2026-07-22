@@ -2,7 +2,7 @@ const db = require("../config/db");
 const settingsRepository = require("../repositories/ticket-settings.repository");
 const sequenceRepository = require("../repositories/ticket-sequence.repository");
 const { buildTicketNumber, validateTicketSettings } = require("../utils/ticket-format-parser");
-const { getTicketPeriod } = require("../utils/ticket-period-helper");
+const { getTicketPeriod, requireTicketTimeZone } = require("../utils/ticket-period-helper");
 
 const rowToSettings = (row) => ({
   autoGenerate: Boolean(row.auto_generate),
@@ -30,20 +30,24 @@ const configurationError = (message, code = "TICKET_CONFIGURATION_ERROR") => {
   return error;
 };
 
-const generateUsingTransaction = async ({ context, date, transaction, repositories }) => {
+const generateUsingTransaction = async ({ context, date, transaction, repositories, runtimeSettings }) => {
   const settingsRow = await repositories.settings.findSettings(transaction);
   if (!settingsRow) throw configurationError("Ticket number settings are not configured");
   const settings = rowToSettings(settingsRow);
   if (!settings.autoGenerate) {
     throw configurationError("Automatic ticket generation is disabled and no authorized manual workflow is configured", "TICKET_AUTO_GENERATION_DISABLED");
   }
-  const validation = validateTicketSettings(settings);
+  let timeZone;
+  try { timeZone = requireTicketTimeZone(runtimeSettings?.portal?.timeZone); }
+  catch (error) { throw configurationError(error.message, error.code); }
+  const validation = validateTicketSettings(settings, { timeZone });
   if (Object.keys(validation.errors).length) throw configurationError("Ticket number settings are invalid");
 
   const period = getTicketPeriod({
     prefix: settings.ticketPrefix,
     sequenceReset: settings.sequenceReset,
     date,
+    timeZone,
   });
   const row = await repositories.sequence.ensureSequence({
     key: period.key,
@@ -55,7 +59,7 @@ const generateUsingTransaction = async ({ context, date, transaction, repositori
   let sequence = Number(row.current_sequence);
   for (let attempt = 0; attempt < 1000; attempt += 1) {
     sequence += 1;
-    const ticketNumber = buildTicketNumber({ settings, sequence, context, date });
+    const ticketNumber = buildTicketNumber({ settings, sequence, context, date, timeZone });
     if (await repositories.sequence.ticketExists(ticketNumber, transaction)) continue;
     await repositories.sequence.updateSequence({ id: row.id, sequence, ticketNumber }, transaction);
     return { ticketNumber, sequence, sequenceKey: period.key, sequencePeriod: period.label };
@@ -70,14 +74,15 @@ const generateTicketNumber = async ({
   transaction,
   date = new Date(),
   repositories = { settings: settingsRepository, sequence: sequenceRepository },
+  runtimeSettings,
 } = {}) => {
   const context = { departmentCode, locationCode, categoryCode };
-  if (transaction) return generateUsingTransaction({ context, date, transaction, repositories });
+  if (transaction) return generateUsingTransaction({ context, date, transaction, repositories, runtimeSettings });
 
   const connection = await db.getConnection();
   try {
     await connection.beginTransaction();
-    const result = await generateUsingTransaction({ context, date, transaction: connection, repositories });
+    const result = await generateUsingTransaction({ context, date, transaction: connection, repositories, runtimeSettings });
     await connection.commit();
     return result;
   } catch (error) {

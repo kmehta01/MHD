@@ -28,7 +28,7 @@ export const settingsSections = [
       { key: "defaultLanguage", label: "Default Language", type: "select", options: options(["English", "Spanish"]) },
       { key: "dateFormat", label: "Date Format", type: "select", options: options(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"]) },
       { key: "timeFormat", label: "Time Format", type: "select", options: options(["12 Hour", "24 Hour"]) },
-      { key: "timeZone", label: "Time Zone" },
+      { key: "timeZone", label: "Time Zone", help: "Controls portal-local dates, ticket date segments, and daily, monthly, or yearly ticket sequence boundaries. Changes apply to the next ticket." },
       { key: "recordsPerPage", label: "Records Per Page", type: "number", min: 5, max: 200 },
       { key: "defaultDashboardPeriod", label: "Default Dashboard Period", type: "select", options: options(["Last 7 Days", "Last 30 Days", "Current Month", "Current Quarter", "Current Year"]) },
       { key: "maintenanceMode", label: "Maintenance Mode", type: "toggle", help: "Temporarily prevent public portal access." },
@@ -120,6 +120,16 @@ export const settingsSections = [
       key, label, type: "toggle", runtimeCapability,
       unavailableHelp: runtimeCapability === "email" ? "Configure SMTP before enabling email notifications." : undefined,
     })),
+  },
+  {
+    id: "email", title: "Email & SMTP", icon: "contact", runtimeCapability: "email",
+    description: "Configure the non-secret identity applied to outgoing email.",
+    runtimeHelp: "SMTP host, port, credentials, encryption, and the verified From mailbox are managed through backend environment variables. Changes to those deployment values require a backend restart.",
+    fields: [
+      { key: "subjectPrefix", label: "Email Subject Prefix", maxLength: 80, help: "Optional. Falls back to the organization short name, then the portal name." },
+      { key: "replyToAddress", label: "Reply-To Address", type: "email", maxLength: 190, help: "Optional. Falls back to the footer support email, then the organization official email." },
+      { key: "footerText", label: "Email Footer Text", type: "textarea", rows: 3, maxLength: 500, full: true, help: "Optional. Falls back to the organization name and portal name." },
+    ],
   },
   {
     id: "security", title: "Security Settings", icon: "shieldCheck", description: "Apply account, password, session, and login controls.",

@@ -1,17 +1,5 @@
 const db = require("../src/config/db");
 
-const departments = [
-  ["Ministry Headquarters", "ministry-headquarters"],
-  ["Family Support & Gender Affairs", "family-support-gender-affairs"],
-  ["Human Services", "human-services"],
-  ["Community Rehabilitation", "community-rehabilitation"],
-  ["Policy & Planning", "policy-planning"],
-  [
-    "Inspector of Social Services Institutions",
-    "inspector-social-services-institutions",
-  ],
-];
-
 const dashboardWidgetPermissions = [
   ["dashboard_cards", "view_total", "dashboard.cards.total", "View Total Grievances card"],
   ["dashboard_cards", "view_new", "dashboard.cards.new", "View New Grievances card"],
@@ -435,16 +423,6 @@ const run = async () => {
         UNIQUE KEY unique_departments_slug (slug)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
     `);
-
-    for (const [name, slug] of departments) {
-      await connection.query(
-        `INSERT INTO departments (name, slug, is_active)
-         VALUES (?, ?, 1)
-         ON DUPLICATE KEY UPDATE
-           slug = slug`,
-        [name, slug],
-      );
-    }
 
     await ensureColumn(
       connection,

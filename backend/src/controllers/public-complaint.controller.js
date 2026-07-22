@@ -560,7 +560,8 @@ const submitAdminComplaint = async (req, res) => {
     );
     const receivedDate = getString(req.body.office_received_date);
     const receivedBy = getString(req.body.office_received_by);
-    const classification = getString(req.body.office_initial_classification);
+    const classificationValue = getString(req.body.office_initial_classification_id || req.body.office_initial_classification);
+    const classification = await ConfigurationModel.findActiveIntakeClassification(classificationValue);
     const assignedTo = getString(req.body.office_assigned_to);
 
     if (!receivedDate || !isValidIsoDate(receivedDate)) {
@@ -578,7 +579,7 @@ const submitAdminComplaint = async (req, res) => {
     if (!receivedBy) {
       throw buildClientError("Received by is required for office intake");
     }
-    if (!["Level 1", "Level 2", "Level 3", "Level 4"].includes(classification)) {
+    if (!classification) {
       throw buildClientError("Select an initial classification");
     }
     if (!assignedTo) {
@@ -609,7 +610,7 @@ const submitAdminComplaint = async (req, res) => {
           intakeSource: "walk_in",
           receivedDate: officeReceivedAt,
           receivedBy: receivedBy.slice(0, 120),
-          initialClassification: classification,
+          initialClassificationId: classification.id,
           assignedTo: assignedTo.slice(0, 160),
           createdByAdminUserId: req.user.id,
         },

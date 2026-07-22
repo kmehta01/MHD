@@ -45,6 +45,66 @@ async function listFormOptions({ activeOnly = false } = {}) {
   return grouped;
 }
 
+const listIntakeClassifications = async ({ activeOnly = false } = {}) => {
+  const [rows] = await db.query(
+    `SELECT id, classification_key, name, help_text, sort_order, is_active, created_at, updated_at
+       FROM complaint_intake_classifications ${activeOnly ? "WHERE is_active=1" : ""}
+      ORDER BY sort_order, id`,
+  );
+  return rows;
+};
+
+const findActiveIntakeClassification = async (value, executor = db) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  const numericId = /^\d+$/.test(normalized) ? Number(normalized) : 0;
+  const [rows] = await executor.query(
+    `SELECT id, classification_key, name, help_text, sort_order
+       FROM complaint_intake_classifications
+      WHERE is_active=1 AND (id=? OR classification_key=? OR name=?) LIMIT 1`,
+    [numericId, normalized, normalized],
+  );
+  return rows[0] || null;
+};
+
+const getIntakeClassification = async (id) => {
+  const [rows] = await db.query(`SELECT * FROM complaint_intake_classifications WHERE id=? LIMIT 1`, [id]);
+  return rows[0] || null;
+};
+
+const saveIntakeClassification = async (item) => {
+  if (item.id) {
+    const [result] = await db.query(
+      `UPDATE complaint_intake_classifications
+          SET name=?, help_text=?, sort_order=?, is_active=? WHERE id=?`,
+      [item.name, item.helpText, item.sortOrder, item.isActive ? 1 : 0, item.id],
+    );
+    return result.affectedRows || result.changedRows ? item.id : item.id;
+  }
+  const [result] = await db.query(
+    `INSERT INTO complaint_intake_classifications
+       (classification_key,name,help_text,sort_order,is_active) VALUES (?,?,?,?,?)`,
+    [item.key, item.name, item.helpText, item.sortOrder, item.isActive ? 1 : 0],
+  );
+  return result.insertId;
+};
+
+const getIntakeClassificationDependencies = async (id) => {
+  const [[row]] = await db.query(
+    `SELECT COUNT(*) count FROM complaints c
+       JOIN complaint_statuses s ON s.id=c.status_id
+      WHERE c.office_initial_classification_id=? AND s.is_final=0`, [id],
+  );
+  return { activeComplaints: Number(row?.count || 0) };
+};
+
+const deactivateIntakeClassification = async (id) => {
+  const [result] = await db.query(
+    `UPDATE complaint_intake_classifications SET is_active=0 WHERE id=?`, [id],
+  );
+  return result.affectedRows;
+};
+
 const saveFormOption = async (item) => {
   if (item.id) {
     const [result] = await db.query(
@@ -360,12 +420,12 @@ const deactivateHoliday = async (id) => {
 };
 
 module.exports = {
-  createRoutingRule, deactivateCatalogItem, deactivateHoliday, deactivateRoutingRule,
-  findActiveCatalogItem, findActiveCategoryMapping, findPriorityByName, findRoutingRule, findStatusByName,
-  getDeactivationDependencies,
+  createRoutingRule, deactivateCatalogItem, deactivateHoliday, deactivateIntakeClassification, deactivateRoutingRule,
+  findActiveCatalogItem, findActiveCategoryMapping, findActiveIntakeClassification, findPriorityByName, findRoutingRule, findStatusByName,
+  getDeactivationDependencies, getIntakeClassification, getIntakeClassificationDependencies,
   getFormOption, getFormOptionDeactivationDependencies,
-  listAssignableOfficers, listCatalog, listHolidays, listPublicCatalog,
+  listAssignableOfficers, listCatalog, listHolidays, listIntakeClassifications, listPublicCatalog,
   listFormOptions, listRoutingRules, listWorkflow, saveCatalogItem, saveCategoryMappings,
-  saveFormOption, saveHoliday, savePriority, saveStatus, saveTransition,
+  saveFormOption, saveHoliday, saveIntakeClassification, savePriority, saveStatus, saveTransition,
   deactivateFormOption, updateRoutingRule,
 };

@@ -42,6 +42,11 @@ const normalizeLimit = (value, fallback = 25) =>
 const normalizePage = (value) =>
   Math.max(1, Number.parseInt(value, 10) || 1);
 
+const toNullableBoolean = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  return [true, 1, "1", "true", "yes", "on"].includes(value) ? 1 : 0;
+};
+
 const createWithAttachments = async ({ complaint, attachments }) => {
   if (!complaint?.settings) {
     throw new TypeError("Runtime General Settings are required to create a grievance");
@@ -58,14 +63,12 @@ const createWithAttachments = async ({ complaint, attachments }) => {
       settings: complaint.settings,
       executor: connection,
     });
-    const generatedTicket = await generateTicketNumber({ transaction: connection });
+    const generatedTicket = await generateTicketNumber({ transaction: connection, runtimeSettings: complaint.settings });
     const tokenNumber = generatedTicket.ticketNumber;
     const [result] = await connection.query(`INSERT INTO complaints SET ?`, [
       {
         token_number: tokenNumber,
-        ticket_priority: complaint.ticketPriority,
         priority_id: complaint.priorityId || null,
-        status: complaint.initialStatus,
         status_id: complaint.statusId || null,
         category_id: complaint.categoryId || null,
         location_id: complaint.locationId || null,
@@ -86,7 +89,7 @@ const createWithAttachments = async ({ complaint, attachments }) => {
         identification_number_hash: grievance.identification_number_hash,
         identification_number_last4: grievance.identification_number_last4,
         contact_pref: grievance.contact_pref,
-        on_behalf: grievance.on_behalf,
+        on_behalf: toNullableBoolean(grievance.on_behalf),
         affected_name: grievance.affected_name,
         relationship: grievance.relationship,
         permission: grievance.permission,
@@ -96,10 +99,10 @@ const createWithAttachments = async ({ complaint, attachments }) => {
         incident_location: grievance.incident_location,
         description: grievance.description,
         desired_outcome: grievance.desired_outcome,
-        tried_resolve: grievance.tried_resolve,
+        tried_resolve: toNullableBoolean(grievance.tried_resolve),
         prev_attempts: grievance.prev_attempts,
-        has_documents: grievance.has_documents,
-        has_witnesses: grievance.has_witnesses,
+        has_documents: toNullableBoolean(grievance.has_documents),
+        has_witnesses: toNullableBoolean(grievance.has_witnesses),
         witness_name: grievance.witness_name,
         witness_phone: grievance.witness_phone,
         accommodation: JSON.stringify(grievance.accommodation || []),
@@ -110,7 +113,7 @@ const createWithAttachments = async ({ complaint, attachments }) => {
         intake_source: office.intakeSource || "public",
         office_received_at: office.receivedDate || null,
         office_received_by: office.receivedBy || null,
-        office_initial_classification: office.initialClassification || null,
+        office_initial_classification_id: office.initialClassificationId || null,
         office_assigned_to: office.assignedTo || null,
         created_by_admin_user_id: office.createdByAdminUserId || null,
         ip_address: complaint.ipAddress,
@@ -350,18 +353,20 @@ const findById = async (
       c.has_witnesses, c.witness_name, c.witness_phone, c.accommodation,
       c.accommodation_other, c.declaration_confirm, c.signature,
       c.declaration_date, c.intake_source, c.office_received_at,
-      c.office_received_by, c.office_initial_classification,
+      c.office_received_by, c.office_initial_classification, c.office_initial_classification_id,
       c.office_assigned_to, c.created_by_admin_user_id,
       c.due_at, c.resolved_at, c.closed_at, c.resolution_summary,
       c.assigned_officer_id, c.category_id, c.location_id,
       c.created_at, c.updated_at,
       d.name AS assigned_department_name, au.name AS assigned_officer_name,
-      cc.name AS category_name, cl.name AS location_name
+      cc.name AS category_name, cl.name AS location_name,
+      ic.name AS office_initial_classification_name, ic.classification_key AS office_initial_classification_key
      FROM complaints c
      LEFT JOIN departments d ON d.id = c.assigned_department_id
      LEFT JOIN admin_users au ON au.id=c.assigned_officer_id
      LEFT JOIN complaint_categories cc ON cc.id=c.category_id
      LEFT JOIN complaint_locations cl ON cl.id=c.location_id
+     LEFT JOIN complaint_intake_classifications ic ON ic.id=c.office_initial_classification_id
      JOIN complaint_statuses s ON s.id=c.status_id
      JOIN complaint_priorities p ON p.id=c.priority_id
      ${idClause}

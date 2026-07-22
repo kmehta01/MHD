@@ -76,7 +76,7 @@ const initialForm = (receivedBy = "") => ({
   declaration_date: today(),
   office_received_date: today(),
   office_received_by: receivedBy,
-  office_initial_classification: "",
+  office_initial_classification_id: "",
   office_assigned_to: "",
 });
 
@@ -100,7 +100,7 @@ const AdminGrievanceForm = () => {
   const [qrCodeError, setQrCodeError] = useState("");
   const [policy, setPolicy] = useState(null);
   const [attachmentTypes, setAttachmentTypes] = useState([]);
-  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [], formOptions: {} });
+  const [catalog, setCatalog] = useState({ categories: [], departments: [], locations: [], formOptions: {}, intakeClassifications: [] });
   const qrCanvasRef = useRef(null);
   const anonymous = form.submission_type === "anonymous";
   const submissionPolicy = policy?.grievanceSubmission;
@@ -121,8 +121,8 @@ const AdminGrievanceForm = () => {
 
   useEffect(() => {
     let active = true;
-    Promise.all([API.get("/public/settings"), API.get("/public/catalog")])
-      .then(([settingsResponse, catalogResponse]) => {
+    Promise.all([API.get("/public/settings"), API.get("/public/catalog"), API.get("/complaints/options")])
+      .then(([settingsResponse, catalogResponse, optionsResponse]) => {
         if (!active) return;
         const nextCatalog = catalogResponse.data.data;
         if (!hasRequiredGrievanceFormOptions(nextCatalog.formOptions)) {
@@ -130,7 +130,7 @@ const AdminGrievanceForm = () => {
         }
         setPolicy(settingsResponse.data.data);
         setAttachmentTypes(settingsResponse.data.meta?.capabilities?.attachments?.types || []);
-        setCatalog(nextCatalog);
+        setCatalog({ ...nextCatalog, intakeClassifications: optionsResponse.data.data.intakeClassifications || [] });
         setForm((current) => reconcileGrievanceFormSelections(current, nextCatalog.formOptions));
       })
       .catch((requestError) => {
@@ -259,7 +259,7 @@ const AdminGrievanceForm = () => {
       if (form.declaration_date > today()) return "Declaration date cannot be in the future.";
       if (!form.office_received_date) return "Enter the office received date.";
       if (!form.office_received_by.trim()) return "Enter the receiving officer's name.";
-      if (!form.office_initial_classification) return "Select the initial classification.";
+      if (!form.office_initial_classification_id) return "Select the initial classification.";
       if (!form.office_assigned_to.trim()) return "Enter who the grievance is assigned to.";
     }
 
@@ -540,7 +540,7 @@ const AdminGrievanceForm = () => {
                 <label><span>Date received *</span><input max={today()} name="office_received_date" onChange={update} type="date" value={form.office_received_date} /></label>
                 <label><span>Reference number</span><input disabled placeholder="Auto-generated after submission" /></label>
                 <label><span>Received by *</span><input name="office_received_by" onChange={update} placeholder="Receiving officer's name" value={form.office_received_by} /></label>
-                <label><span>Initial classification *</span><select name="office_initial_classification" onChange={update} value={form.office_initial_classification}><option value="">Select level</option><option>Level 1</option><option>Level 2</option><option>Level 3</option><option>Level 4</option></select></label>
+                <label><span>Initial classification *</span><select name="office_initial_classification_id" onChange={update} value={form.office_initial_classification_id}><option value="">Select classification</option>{catalog.intakeClassifications.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
                 <label className="admin-grievance-office-wide"><span>Assigned to *</span><input name="office_assigned_to" onChange={update} placeholder="Officer, team, or department" value={form.office_assigned_to} /></label>
               </div>
             </div>

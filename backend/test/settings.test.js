@@ -159,12 +159,23 @@ test("General Settings reset requires exact confirmation and a reason", () => {
   assert.equal(continued, true);
 });
 
-test("all 135 authoritative defaults satisfy their field definitions", () => {
-  assert.equal(generalSettingDefinitions.length, 135);
+test("all 138 authoritative defaults satisfy their field definitions", () => {
+  assert.equal(generalSettingDefinitions.length, 138);
   for (const definition of generalSettingDefinitions) {
     const result = validateValue(definition, definition.defaultValue);
     assert.equal(result.error, undefined, `${definition.settingKey}: ${result.error}`);
   }
+});
+
+test("email identity settings are private and validate optional email addresses", () => {
+  const definitions = generalSettingDefinitions.filter((item) => item.group === "email");
+  assert.deepEqual(definitions.map((item) => item.settingKey), [
+    "email.subjectPrefix", "email.replyToAddress", "email.footerText",
+  ]);
+  assert.ok(definitions.every((item) => item.isPublic === false));
+  const replyTo = definitions.find((item) => item.key === "replyToAddress");
+  assert.equal(validateValue(replyTo, "").error, undefined);
+  assert.match(validateValue(replyTo, "not-an-email").error, /valid email address/);
 });
 
 test("General Settings reject invalid IANA time zones", () => {

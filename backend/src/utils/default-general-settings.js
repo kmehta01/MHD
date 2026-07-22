@@ -101,6 +101,10 @@ const generalSettingDefinitions = [
     ["notifyDueDateReminder", true], ["notifyOverdueGrievance", true], ["notifyAdminResolutionSubmission", true], ["notifyDepartmentResolutionReturned", true], ["notifyCitizenGrievanceClosed", true],
   ].map(([key, value]) => define("notifications", key, value, "boolean")),
 
+  define("email", "subjectPrefix", "", "string", { maxLength: 80 }),
+  define("email", "replyToAddress", "", "email", { maxLength: 190 }),
+  define("email", "footerText", "", "string", { maxLength: 500 }),
+
   define("security", "minimumPasswordLength", 8, "number", { integer: true, min: 8, max: 32 }),
   define("security", "requireUppercase", true, "boolean"),
   define("security", "requireLowercase", true, "boolean"),

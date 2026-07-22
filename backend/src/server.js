@@ -77,7 +77,7 @@ app.use("/api", apiLimiter);
 app.get("/", (req, res) => {
   res.json({
     status: true,
-    message: "MHD Belize API running successfully",
+    message: "API running successfully",
   });
 });
 

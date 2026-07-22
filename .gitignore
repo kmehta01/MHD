@@ -32,4 +32,6 @@ Thumbs.db
 *.sqlite
 *.db
 *.sql
-
+!database/database.sql
+!database/migrations/
+!database/migrations/*.sql

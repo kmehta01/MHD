@@ -7,7 +7,11 @@ const { handleDirectoryImageUpload } = require("../middlewares/directory-image.m
 
 const router = express.Router();
 router.use(verifyToken);
-router.get("/", checkAnyPermission(["configuration.catalogs.manage", "configuration.routing.manage", "configuration.workflow.manage", "configuration.departments.manage", "configuration.form_options.manage", "departments.view", "departments.manage", "departments.manage_limited"]), controller.getConfiguration);
+router.get("/", checkAnyPermission(["configuration.catalogs.manage", "configuration.routing.manage", "configuration.workflow.manage", "configuration.departments.manage", "configuration.form_options.manage", "configuration.intake_classifications.manage", "departments.view", "departments.manage", "departments.manage_limited"]), controller.getConfiguration);
+router.get("/intake-classifications", checkPermission("configuration.intake_classifications.manage"), controller.getIntakeClassifications);
+router.post("/intake-classifications", checkPermission("configuration.intake_classifications.manage"), controller.saveIntakeClassification);
+router.put("/intake-classifications/:id", checkPermission("configuration.intake_classifications.manage"), controller.saveIntakeClassification);
+router.delete("/intake-classifications/:id", checkPermission("configuration.intake_classifications.manage"), controller.deactivateIntakeClassification);
 router.get("/site-directory", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.view", "departments.manage", "departments.manage_limited"]), directory.getDirectoryConfiguration);
 router.put("/site-directory/departments/:id", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.manage"]), directory.saveDepartmentProfile);
 router.post("/site-directory/facilities", checkAnyPermission(["configuration.catalogs.manage", "configuration.departments.manage", "departments.manage"]), directory.saveFacility);

@@ -224,6 +224,15 @@ const GeneralSettings = () => {
         <main className="general-settings-content">
           {visibleSections.map((section) => (
             <SettingsSection description={section.description} icon={section.icon} id={section.id} key={section.id} title={section.title}>
+              {section.runtimeCapability ? (
+                <div className="settings-readonly-banner">
+                  <Icon name={meta?.runtime_capabilities?.[section.runtimeCapability]?.configured ? "check" : "alert"} size={18} />
+                  <div>
+                    <strong>SMTP {meta?.runtime_capabilities?.[section.runtimeCapability]?.configured ? "configured" : "not configured"}</strong>
+                    <span>{section.runtimeHelp}</span>
+                  </div>
+                </div>
+              ) : null}
               {section.preview === "workflow" ? <div className="settings-workflow-preview" aria-label="Default grievance workflow">{(meta?.master_options?.statuses || []).map((status, index, statuses) => <span key={status.value}><b>{index + 1}</b>{status.label}{index < statuses.length - 1 ? <Icon name="chevronRight" size={14} /> : null}</span>)}</div> : null}
               <div className="general-settings-form-grid">{section.fields.map((field) => renderField(section, field))}</div>
               {section.preview === "dashboard" ? <DashboardPreview settings={settings.dashboard} /> : null}

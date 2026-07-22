@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const NotificationModel = require("../models/notification.model");
 const SettingsPolicy = require("./settings-policy.service");
-const { sendEmail } = require("./mail.service");
+const { resolveEmailIdentity, sendEmail } = require("./mail.service");
 
 const EVENT_TOGGLES = Object.freeze({
   due_reminder: "notifyDueDateReminder", overdue: "notifyOverdueGrievance",
@@ -38,7 +38,7 @@ const enqueueComplaintEvent = async ({ eventType, complaintId, eventKey, extra =
     status: context.status, dueAt: context.due_at ? new Date(context.due_at).toISOString() : "",
     departmentName: context.department_name || "Unassigned",
     acknowledgementMessage: settings.ticket.acknowledgementMessage,
-    organizationName: settings.organization.organizationName,
+    ...resolveEmailIdentity(settings),
     ...extra,
   };
   const baseKey = eventKey || `${eventType}:${complaintId}:${crypto.randomUUID()}`;
@@ -82,14 +82,16 @@ const processNext = async (owner = crypto.randomUUID()) => {
   const item = await NotificationModel.claimNext(owner);
   if (!item) return false;
   try {
-    const payload = typeof item.payload === "string" ? JSON.parse(item.payload) : item.payload;
+    const settings = await SettingsPolicy.getPolicy();
+    const storedPayload = typeof item.payload === "string" ? JSON.parse(item.payload) : item.payload;
+    const payload = { ...storedPayload, ...resolveEmailIdentity(settings) };
     const title = render(item.subject_template || item.template_name || "Grievance notification", payload);
     const message = render(item.body_template, payload);
     if (item.channel === "dashboard") {
       if (!item.admin_user_id) throw new Error("Dashboard notification recipient is missing");
       await NotificationModel.createDashboardNotification(item, title, message);
     } else {
-      await sendEmail({ to: item.recipient_email, subject: title, text: message });
+      await sendEmail({ to: item.recipient_email, subject: title, text: message, settings });
     }
     await NotificationModel.complete(item.id);
   } catch (error) {

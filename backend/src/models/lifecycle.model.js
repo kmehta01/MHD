@@ -17,11 +17,12 @@ const withTransaction = async (operation) => {
 
 const findState = async (complaintId, executor = db, lock = false) => {
   const [rows] = await executor.query(
-    `SELECT c.id, c.status_id, c.status, c.priority_id, c.ticket_priority,
+    `SELECT c.id, c.status_id, s.name AS status, c.priority_id, p.name AS ticket_priority,
             c.assigned_department_id, c.assigned_officer_id, c.due_at,
             c.resolved_at, c.closed_at, s.status_key, s.reporting_group, s.is_final
      FROM complaints c
-     LEFT JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_statuses s ON s.id=c.status_id
+     JOIN complaint_priorities p ON p.id=c.priority_id
      WHERE c.id=? LIMIT 1${lock ? " FOR UPDATE" : ""}`,
     [complaintId],
   );
@@ -76,9 +77,9 @@ const assign = async ({ complaintId, departmentId, officerId, priorityRef, note,
     if (priorityRef && !priority) throw Object.assign(new Error("Invalid grievance priority"), { statusCode: 400 });
     await connection.query(
       `UPDATE complaints SET assigned_department_id=?, assigned_officer_id=?,
-       priority_id=COALESCE(?, priority_id), ticket_priority=COALESCE(?, ticket_priority)
+       priority_id=COALESCE(?, priority_id)
        WHERE id=?`,
-      [departmentId, officerId || null, priority?.id || null, priority?.name || null, complaintId],
+      [departmentId, officerId || null, priority?.id || null, complaintId],
     );
     await connection.query(
       `INSERT INTO complaint_assignment_history
@@ -93,7 +94,7 @@ const transition = async ({ complaintId, toStatusRef, comment, actorId, resoluti
   withTransaction(async (connection) => {
     const state = await findState(complaintId, connection, true);
     if (!state) return null;
-    const fromStatus = state.status_id ? await findStatus(state.status_id, connection) : await findStatus(state.status, connection);
+    const fromStatus = await findStatus(state.status_id, connection);
     const toStatus = await findStatus(toStatusRef, connection);
     if (!fromStatus || !toStatus) throw Object.assign(new Error("The grievance status is invalid"), { statusCode: 400 });
     if (fromStatus.id === toStatus.id) throw Object.assign(new Error("The grievance is already in that status"), { statusCode: 409 });
@@ -103,12 +104,12 @@ const transition = async ({ complaintId, toStatusRef, comment, actorId, resoluti
     const resolvedAt = toStatus.reporting_group === "resolved" ? new Date() : null;
     const closedAt = toStatus.reporting_group === "closed" ? new Date() : null;
     await connection.query(
-      `UPDATE complaints SET status_id=?, status=?,
+      `UPDATE complaints SET status_id=?,
        resolved_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='open' THEN NULL ELSE resolved_at END,
        closed_at=CASE WHEN ? IS NOT NULL THEN ? WHEN ?='open' THEN NULL ELSE closed_at END,
        resolution_summary=COALESCE(?, resolution_summary)
        WHERE id=?`,
-      [toStatus.id, toStatus.name, resolvedAt, resolvedAt, toStatus.reporting_group,
+      [toStatus.id, resolvedAt, resolvedAt, toStatus.reporting_group,
         closedAt, closedAt, toStatus.reporting_group, resolutionSummary, complaintId],
     );
     await connection.query(
