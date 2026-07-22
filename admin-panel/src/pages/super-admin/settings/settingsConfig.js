@@ -12,6 +12,7 @@ export const settingsSections = [
       { key: "favicon", label: "Favicon", type: "file", assetType: "favicon", full: true },
       { key: "officialEmail", label: "Official Email", type: "email" },
       { key: "officialPhone", label: "Official Phone Number", type: "tel" },
+      { key: "officialPhoneLabel", label: "Official Phone Label", help: "Displayed beside the official number in the public header." },
       { key: "websiteUrl", label: "Website URL", type: "url", full: true },
       { key: "officeAddress", label: "Office Address", type: "textarea", rows: 3, full: true },
       { key: "country", label: "Country", required: true },

@@ -439,8 +439,34 @@ const findAttachment = async ({
   return attachments[0] || null;
 };
 
+const countByStatusKey = async ({
+  statusKey,
+  scope = { type: "all", departmentId: null },
+}) => {
+  const conditions = ["s.status_key = ?"];
+  const values = [statusKey];
+
+  if (scope.type === "department") {
+    conditions.push("c.assigned_department_id = ?");
+    values.push(scope.departmentId);
+  } else if (scope.type === "none") {
+    return 0;
+  }
+
+  const [rows] = await db.query(
+    `SELECT COUNT(*) AS total
+     FROM complaints c
+     JOIN complaint_statuses s ON s.id = c.status_id
+     WHERE ${conditions.join(" AND ")}`,
+    values,
+  );
+
+  return Number(rows[0]?.total || 0);
+};
+
 module.exports = {
   buildComplaintToken,
+  countByStatusKey,
   createWithAttachments,
   findAll,
   findAttachment,

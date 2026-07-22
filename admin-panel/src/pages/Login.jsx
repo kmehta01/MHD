@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
+import useAdminBranding from "../hooks/useAdminBranding";
 import API from "../services/api";
 
 const Login = () => {
   const navigate = useNavigate();
+  const branding = useAdminBranding();
   const [step, setStep] = useState("credentials");
   const [formData, setFormData] = useState({ email: "", password: "" });
   const [challenge, setChallenge] = useState(null);
@@ -161,23 +163,19 @@ const Login = () => {
         <div className="login-brand-top">
           <div className="brand-logo-shell login-logo-shell">
             <img
-              alt="Ministry of Human Development, Family Support and Gender Affairs"
+              alt={branding.organizationName || branding.portalName}
               className="brand-logo"
-              src="/assets/images/ministry-logo-footer.png"
+              src={branding.logo}
             />
           </div>
         </div>
 
         <div className="login-brand-content">
-          <p className="eyebrow">Ministry Administration Portal</p>
-          <h1>
-            Serving people.
-            <br />
-            Strengthening families.
-          </h1>
+          <p className="eyebrow">{branding.portalName} Administration</p>
+          <h1>{branding.portalSubtitle || "Administration Portal"}</h1>
           <p>
-            Securely manage the Ministry of Human Development, Family Support
-            and Gender Affairs digital services and public information.
+            Securely manage {branding.organizationName || "organization"} digital
+            services and public information.
           </p>
           <div className="login-trust-list">
             <span>
@@ -193,7 +191,9 @@ const Login = () => {
         </div>
 
         <div className="login-brand-footer">
-          <span>&copy; 2026 Government of Belize</span>
+          {branding.copyrightYear && branding.footerText ? (
+            <span>&copy; {branding.copyrightYear} {branding.footerText}</span>
+          ) : null}
           <span>Authorized personnel only</span>
         </div>
         <div className="login-pattern" aria-hidden="true">
@@ -207,9 +207,9 @@ const Login = () => {
         <div className="login-mobile-brand">
           <div className="brand-logo-shell login-mobile-logo-shell">
             <img
-              alt="Ministry of Human Development, Family Support and Gender Affairs"
+              alt={branding.organizationName || branding.portalName}
               className="brand-logo"
-              src="/assets/images/ministry-logo-footer.png"
+              src={branding.logo}
             />
           </div>
         </div>
@@ -227,7 +227,7 @@ const Login = () => {
           <p className="login-intro">
             {step === "verify"
               ? `Enter the code sent to ${challenge?.maskedEmail}.`
-              : "Sign in with your ministry administrator account to continue."}
+              : "Sign in with your administrator account to continue."}
           </p>
 
           {error ? (
@@ -247,7 +247,7 @@ const Login = () => {
                     autoComplete="email"
                     name="email"
                     onChange={handleChange}
-                    placeholder="name@humandevelopment.gov.bz"
+                    placeholder="Enter your email address"
                     type="email"
                     value={formData.email}
                   />

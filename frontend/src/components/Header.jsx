@@ -1,6 +1,13 @@
 import { Link, NavLink } from "react-router-dom";
 
-function Header({ branding, language, onLanguageChange, settings, t }) {
+const socialIconClasses = {
+  facebook_f: "fa-facebook-f",
+  x_twitter: "fa-x-twitter",
+  instagram: "fa-instagram",
+  youtube: "fa-youtube",
+};
+
+function Header({ branding, language, onLanguageChange, settings, socialLinks = [], t }) {
   const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
   const splitNavClass = ({ isActive }) =>
     `nav-link main-navbar__split-link${isActive ? " active" : ""}`;
@@ -30,7 +37,7 @@ function Header({ branding, language, onLanguageChange, settings, t }) {
                 </span>
                 <span className="header-topbar__copy">
                   <span className="header-topbar__title">
-                    24/7 Emergency &amp; Social Services Hotline
+                    {branding.officialPhoneLabel}
                   </span>
                   <span className="header-topbar__subtitle">{branding.officialPhone}</span>
                 </span>
@@ -54,31 +61,16 @@ function Header({ branding, language, onLanguageChange, settings, t }) {
               </select>
             </label>
 
-            <ul
+            {socialLinks.length ? <ul
               className="header-topbar__social"
               aria-label="Social media links"
             >
-              <li>
-                <a {...disabledLinkProps} aria-label="Facebook">
-                  <i className="fa-brands fa-facebook-f" aria-hidden="true"></i>
+              {socialLinks.map((link) => <li key={link.platformKey}>
+                <a aria-label={link.label} href={link.url} rel="noreferrer noopener" target="_blank">
+                  <i className={`fa-brands ${socialIconClasses[link.iconKey]}`} aria-hidden="true"></i>
                 </a>
-              </li>
-              <li>
-                <a {...disabledLinkProps} aria-label="X">
-                  <i className="fa-brands fa-x-twitter" aria-hidden="true"></i>
-                </a>
-              </li>
-              <li>
-                <a {...disabledLinkProps} aria-label="Instagram">
-                  <i className="fa-brands fa-instagram" aria-hidden="true"></i>
-                </a>
-              </li>
-              <li>
-                <a {...disabledLinkProps} aria-label="YouTube">
-                  <i className="fa-brands fa-youtube" aria-hidden="true"></i>
-                </a>
-              </li>
-            </ul>
+              </li>)}
+            </ul> : null}
           </div>
         </div>
       </div>

@@ -1,12 +1,21 @@
-const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
-const backendUrl = import.meta.env.VITE_BACKEND_URL || apiBaseUrl.replace(/\/api\/?$/, "");
+import { API_BASE_URL, BACKEND_URL } from "../config/runtime-env";
 
-export const PUBLIC_SETTINGS_URL = `${apiBaseUrl.replace(/\/$/, "")}/public/settings`;
+export const PUBLIC_SETTINGS_URL = `${API_BASE_URL}/public/settings`;
+export const PUBLIC_DIRECTORY_URL = `${API_BASE_URL}/public/site-directory`;
 
 export const resolveBrandingAsset = (assetPath) => {
   if (!assetPath) return "";
   if (/^(?:https?:|data:|blob:)/i.test(assetPath)) return assetPath;
-  return new URL(assetPath, `${backendUrl.replace(/\/$/, "")}/`).toString();
+  return new URL(assetPath, `${BACKEND_URL}/`).toString();
+};
+
+export const resolveDirectoryAsset = (assetPath) => {
+  if (!assetPath) return "";
+  if (/^https:\/\//i.test(assetPath)) return assetPath;
+  if (assetPath.startsWith("/uploads/directory/")) {
+    return new URL(assetPath, `${BACKEND_URL}/`).toString();
+  }
+  return assetPath;
 };
 
 export const applyPublicDocumentBranding = (organization = {}) => {

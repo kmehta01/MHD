@@ -1,6 +1,21 @@
 import ServiceUnitTabs from "../components/ServiceUnitTabs";
+import { useOutletContext } from "react-router-dom";
+import { resolveDirectoryAsset } from "../utils/branding";
+
+const contactHref = (contact) => contact.type === "phone"
+  ? `tel:${contact.linkValue}` : `mailto:${contact.linkValue}`;
+
+const ContactRows = ({ contacts = [] }) => contacts.map((contact) => (
+  <p key={contact.id || contact.key}>
+    <span>{contact.label}:</span>{" "}
+    <a href={contactHref(contact)}>{contact.displayValue}</a>
+  </p>
+));
 
 function Departments() {
+  const { siteDirectory } = useOutletContext();
+  const facilities = siteDirectory?.facilities || [];
+  const publicDepartments = siteDirectory?.departments || [];
   return (
     <main class="departments-page">
       <section class="departments-hero" aria-labelledby="departmentsHeroTitle">
@@ -593,101 +608,15 @@ function Departments() {
           </div>
 
           <div class="facility-grid">
-            <article class="facility-card">
-              <img
-                class="facility-card__image"
-                src="assets/images/golden-haven.png"
-                alt="Golden Haven Rest Home"
-              />
+            {facilities.map((facility) => <article class="facility-card" key={facility.key}>
+              {facility.imagePath ? <img class="facility-card__image" src={resolveDirectoryAsset(facility.imagePath)} alt={facility.name} /> : null}
               <div class="facility-card__content">
-                <h3>Golden Haven Rest Home</h3>
-                <address>
-                  Mile 16, George Price Highway, Hattieville, Belize District
-                </address>
-                <p>
-                  <span>Telephone:</span>
-                  <a href="tel:+5012056079">(501) 205-6079</a>
-                </p>
+                <h3>{facility.name}</h3>
+                {facility.address ? <address>{facility.address}</address> : null}
+                {facility.description ? <p>{facility.description}</p> : null}
+                <ContactRows contacts={facility.contacts} />
               </div>
-            </article>
-            <article class="facility-card">
-              <img
-                class="facility-card__image"
-                src="assets/images/homeless-shelter.png"
-                alt="Good Samaritan Homeless Shelter"
-              />
-              <div class="facility-card__content">
-                <h3>Good Samaritan Homeless Shelter</h3>
-                <p>
-                  Temporary shelter and reintegration support for homeless and
-                  displaced persons.
-                </p>
-              </div>
-            </article>
-            <article class="facility-card">
-              <img
-                class="facility-card__image"
-                src="assets/images/counselling-centre.png"
-                alt="Belize Community Counselling Centre"
-              />
-              <div class="facility-card__content">
-                <h3>Belize Community Counselling Centre</h3>
-                <address>
-                  The Hub, Chetumal Boulevard, Belize City, Belize
-                </address>
-                <p>
-                  <span>Telephone:</span>
-                  <a href="tel:+5012231406">(501) 223-1406</a>
-                </p>
-                <p>
-                  <span>Email:</span>
-                  <a href="mailto:recept.bcccc.crd@humandev.gov.bz">
-                    recept.bcccc.crd@humandev.gov.bz
-                  </a>
-                </p>
-              </div>
-            </article>
-            <article class="facility-card">
-              <img
-                class="facility-card__image"
-                src="assets/images/child-care-centre.png"
-                alt="Dorothy Menzies Child Care Centre"
-              />
-              <div class="facility-card__content">
-                <h3>Dorothy Menzies Child Care Centre</h3>
-                <address>
-                  Corner St. Thomas and 19th Street, Belize City, Belize
-                </address>
-                <p>
-                  <span>Telephone:</span>
-                  <a href="tel:+5012035225">(501) 203-5225</a>
-                </p>
-                <p>
-                  <span>Email:</span>
-                  <a href="mailto:fostermother.dmccc@humandev.gov.bz">
-                    fostermother.dmccc@humandev.gov.bz
-                  </a>
-                </p>
-              </div>
-            </article>
-            <article class="facility-card">
-              <img
-                class="facility-card__image"
-                src="assets/images/youth-development-center.png"
-                alt="New Beginnings Youth Development Center"
-              />
-              <div class="facility-card__content">
-                <h3>New Beginnings Youth Development Center</h3>
-                <address>
-                  21 1/2 Miles, George Price Highway, Rockville, Belize
-                  District, Belize
-                </address>
-                <p>
-                  <span>Telephone:</span>
-                  <a href="tel:+5012458577">(501) 245-8577</a>
-                </p>
-              </div>
-            </article>
+            </article>)}
           </div>
         </div>
       </section>
@@ -704,96 +633,16 @@ function Departments() {
           </div>
 
           <div class="department-contact-grid">
-            <article class="department-contact-card">
+            {publicDepartments.map((department) => <article class="department-contact-card" key={department.code}>
               <span class="department-contact-card__icon">
-                <i class="fa-solid fa-building" aria-hidden="true"></i>
+                <i class={`fa-solid fa-${department.iconKey?.replaceAll("_", "-") || "building"}`} aria-hidden="true"></i>
               </span>
-              <h3>Ministry of Human Development Headquarters</h3>
-              <address>
-                West Block, Independence Plaza, Belmopan, Belize
-              </address>
-              <p>
-                <span>Telephone:</span>{" "}
-                <a href="tel:+5018222161">(501) 822-2161</a>
-              </p>
-              <p>
-                <span>Email:</span>
-                <a href="mailto:senior.secretary@humandev.gov.bz">
-                  senior.secretary@humandev.gov.bz
-                </a>
-              </p>
-            </article>
-            <article class="department-contact-card">
-              <span class="department-contact-card__icon">
-                <i class="fa-solid fa-people-group" aria-hidden="true"></i>
-              </span>
-              <h3>Community Rehabilitation Department</h3>
-              <address>
-                The Hub, Chetumal Boulevard, Belize City, Belize
-              </address>
-              <p>
-                <span>Telephone:</span> (501) 223-2716 / 4003 / 3992
-              </p>
-              <p>
-                <span>Email:</span>
-                <a href="mailto:secretary.crd@humandev.gov.bz">
-                  secretary.crd@humandev.gov.bz
-                </a>
-              </p>
-            </article>
-            <article class="department-contact-card">
-              <span class="department-contact-card__icon">
-                <i class="fa-solid fa-hands-helping" aria-hidden="true"></i>
-              </span>
-              <h3>Department of Human Services</h3>
-              <address>40 Regent Street, Belize City, Belize</address>
-              <p>
-                <span>Telephone:</span> (501) 227-7451 / 2057
-              </p>
-              <p>
-                <span>Email:</span>
-                <a href="mailto:secretary.hsd@humandev.gov.bz">
-                  secretary.hsd@humandev.gov.bz
-                </a>
-              </p>
-            </article>
-            <article class="department-contact-card">
-              <span class="department-contact-card__icon">
-                <i class="fa-solid fa-heart" aria-hidden="true"></i>
-              </span>
-              <h3>Family Support &amp; Gender Affairs Department</h3>
-              <address>#26 Albert Street, Belize City, Belize</address>
-              <p>
-                <span>Telephone:</span> (501) 227-7397 / 3888
-              </p>
-              <p>
-                <span>Email:</span>
-                <a href="mailto:secretary.wfsd@humandev.gov.bz">
-                  secretary.wfsd@humandev.gov.bz
-                </a>
-              </p>
-            </article>
-            <article class="department-contact-card">
-              <span class="department-contact-card__icon">
-                <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
-              </span>
-              <h3>Policy and Planning Unit</h3>
-              <address>
-                West Block, Independence Plaza, Belmopan, Belize
-              </address>
-              <p>
-                <span>Email:</span>
-                <a href="mailto:secretary.ppu@humandev.gov.bz">
-                  secretary.ppu@humandev.gov.bz
-                </a>
-              </p>
-            </article>
+              <h3>{department.name}</h3>
+              {department.address ? <address>{department.address}</address> : null}
+              {department.summary ? <p>{department.summary}</p> : null}
+              <ContactRows contacts={department.contacts} />
+            </article>)}
           </div>
-
-          <a class="department-office-link" href="#">
-            View All Office Locations
-            <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
-          </a>
         </div>
       </section>
 

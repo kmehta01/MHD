@@ -11,9 +11,11 @@ const {
 const backendRoot = path.resolve(__dirname, "../..");
 const projectRoot = path.resolve(backendRoot, "..");
 const adminPanelRoot = path.join(projectRoot, "admin-panel");
+const frontendRoot = path.join(projectRoot, "frontend");
 
 const backendEnvPath = path.join(backendRoot, ".env");
 const adminEnvPath = path.join(adminPanelRoot, ".env");
+const frontendEnvPath = path.join(frontendRoot, ".env");
 const lockPath = path.join(backendRoot, "install.lock");
 const sqlPath = path.join(projectRoot, "database", "database.sql");
 const installMigrationPaths = [
@@ -172,6 +174,17 @@ const getInstallerStatus = () => {
 };
 
 const normalizeConfig = (input = {}) => {
+  const nodeEnv = String(input.node_env || "development").trim().toLowerCase();
+  const production = nodeEnv === "production";
+  if (production && !String(input.backend_url || input.app_url || "").trim()) {
+    throw new InstallerError("Backend URL is required for production installation", 400);
+  }
+  if (production && !String(input.admin_url || "").trim()) {
+    throw new InstallerError("Admin panel URL is required for production installation", 400);
+  }
+  if (production && !String(input.frontend_url || "").trim()) {
+    throw new InstallerError("Public website URL is required for production installation", 400);
+  }
   const backendUrl = assertUrl(
     input.backend_url || input.app_url || "http://localhost:5001",
     "Backend URL",
@@ -183,10 +196,11 @@ const normalizeConfig = (input = {}) => {
   const backendPort = getBackendPort(backendUrl, input.backend_port);
   const frontendUrl = input.frontend_url
     ? assertUrl(input.frontend_url, "Public website URL")
-    : "";
-  const apiBaseUrl = trimTrailingSlash(
+    : "http://localhost:5173";
+  const apiBaseUrl = trimTrailingSlash(assertUrl(
     input.api_base_url || `${backendUrl}/api`,
-  );
+    "API base URL",
+  ));
 
   const config = {
     backend_url: backendUrl,
@@ -204,7 +218,7 @@ const normalizeConfig = (input = {}) => {
     admin_password: String(input.admin_password || ""),
     jwt_secret: String(input.jwt_secret || "").trim(),
     jwt_expires_in: String(input.jwt_expires_in || "1d").trim(),
-    node_env: String(input.node_env || "development").trim(),
+    node_env: nodeEnv,
     reset_database: normalizeBoolean(input.reset_database, true),
     two_factor_enforced: normalizeBoolean(input.two_factor_enforced, false),
     two_factor_pepper: String(
@@ -421,6 +435,18 @@ const validateAttachmentPolicyInstallation = async (connection) => {
   }
 };
 
+const buildClientEnvironmentFiles = (config) => ({
+  admin: buildEnv({
+    VITE_API_BASE_URL: config.api_base_url,
+    VITE_BACKEND_URL: config.backend_url,
+    VITE_PUBLIC_SITE_URL: config.frontend_url,
+  }),
+  frontend: buildEnv({
+    VITE_API_BASE_URL: config.api_base_url,
+    VITE_BACKEND_URL: config.backend_url,
+  }),
+});
+
 const writeEnvironmentFiles = (config) => {
   const backendEnv = buildEnv({
     APP_NAME: "MHD_BELIZE_WEBSITE",
@@ -453,13 +479,11 @@ const writeEnvironmentFiles = (config) => {
     INSTALLATION_STATUS: true,
   });
 
-  const adminEnv = buildEnv({
-    VITE_API_BASE_URL: config.api_base_url,
-    VITE_BACKEND_URL: config.backend_url,
-  });
+  const clientEnvironment = buildClientEnvironmentFiles(config);
 
   fs.writeFileSync(backendEnvPath, backendEnv);
-  fs.writeFileSync(adminEnvPath, adminEnv);
+  fs.writeFileSync(adminEnvPath, clientEnvironment.admin);
+  fs.writeFileSync(frontendEnvPath, clientEnvironment.frontend);
 };
 
 const createInstallLock = () => {
@@ -502,7 +526,7 @@ const runInstaller = async (input = {}) => {
 
     return {
       status: true,
-      message: "Project installed successfully. Please restart backend server.",
+      message: "Project installed successfully. Restart the backend and rebuild both Vite applications to apply generated environment configuration.",
       installed: true,
     };
   } finally {
@@ -513,7 +537,9 @@ const runInstaller = async (input = {}) => {
 };
 
 module.exports = {
+  buildClientEnvironmentFiles,
   InstallerError,
   getInstallerStatus,
+  normalizeConfig,
   runInstaller,
 };

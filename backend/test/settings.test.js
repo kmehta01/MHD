@@ -159,8 +159,8 @@ test("General Settings reset requires exact confirmation and a reason", () => {
   assert.equal(continued, true);
 });
 
-test("all 134 authoritative defaults satisfy their field definitions", () => {
-  assert.equal(generalSettingDefinitions.length, 134);
+test("all 135 authoritative defaults satisfy their field definitions", () => {
+  assert.equal(generalSettingDefinitions.length, 135);
   for (const definition of generalSettingDefinitions) {
     const result = validateValue(definition, definition.defaultValue);
     assert.equal(result.error, undefined, `${definition.settingKey}: ${result.error}`);

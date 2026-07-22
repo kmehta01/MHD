@@ -7,6 +7,7 @@ const {
   getComplaintNotifications,
   getComplaintOptions,
   getComplaints,
+  getNavigationCounts,
 } = require("../controllers/complaint.controller");
 const {
   submitAdminComplaint,
@@ -32,6 +33,7 @@ router.use(
 );
 
 router.get("/", getComplaints);
+router.get("/navigation-counts", getNavigationCounts);
 router.get("/notifications", getComplaintNotifications);
 router.get("/options", getComplaintOptions);
 router.get("/due-date-recalculation/preview", checkPermission("grievances.extend_due_date"), lifecycle.previewDueDateRecalculation);

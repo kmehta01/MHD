@@ -51,6 +51,18 @@ app.use(
   }),
 );
 
+app.use(
+  "/uploads/directory",
+  express.static(path.resolve(__dirname, "../uploads/directory"), {
+    immutable: true,
+    maxAge: "7d",
+    setHeaders: (res) => {
+      res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    },
+  }),
+);
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 300,

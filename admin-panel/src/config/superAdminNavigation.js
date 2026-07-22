@@ -7,6 +7,8 @@ export const superAdminNavigation = [
   {
     name: "Grievance Management",
     icon: "grievances",
+    badgeKey: "newGrievances",
+    badgeAlert: true,
     children: [
       { name: "All Grievances", path: "/grievances" },
       { name: "New Grievances", path: "/grievances/new" },
@@ -41,6 +43,9 @@ export const superAdminNavigation = [
         name: "Department Mapping",
         path: "/department-management/department-mapping",
       },
+      { name: "Public Directory", path: "/department-management/public-directory" },
+      { name: "Facilities", path: "/department-management/facilities" },
+      { name: "Social Links", path: "/department-management/social-links" },
       {
         name: "Assignment Rules",
         path: "/department-management/assignment-rules",

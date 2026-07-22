@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import Icon from "../components/Icon";
 import API from "../services/api";
+import { getAdminUser } from "../utils/permissions";
+import { buildDashboardGreeting } from "../utils/adminPresentation";
 
 const overviewCards = [
   {
@@ -345,11 +347,12 @@ const DashboardSkeleton = () => (
 );
 
 const Dashboard = () => {
+  const { branding = {} } = useOutletContext() || {};
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const adminUser = useMemo(
-    () => JSON.parse(localStorage.getItem("admin_user") || "null"),
+    () => getAdminUser(),
     [],
   );
 
@@ -410,7 +413,7 @@ const Dashboard = () => {
       <section className="dashboard-hero">
         <div>
           <p className="eyebrow">Grievance operations dashboard</p>
-          <h1>Welcome back, {adminUser?.name || "Administrator"} (MHD Belize)</h1>
+          <h1>{buildDashboardGreeting(adminUser, branding)}</h1>
           <p>
             Monitor grievance volume, workload, deadlines, resolution
             performance, and department-level risk.

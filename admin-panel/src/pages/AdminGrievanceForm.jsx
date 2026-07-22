@@ -5,6 +5,7 @@ import Icon from "../components/Icon";
 import API from "../services/api";
 import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
 import { buildAttachmentPolicy } from "../utils/attachmentPolicy";
+import { PUBLIC_SITE_URL } from "../config/runtime-env";
 
 const today = () => {
   const date = new Date();
@@ -26,8 +27,7 @@ const normalizeComplaintReference = (reference) => {
 };
 
 const buildTrackingUrl = (reference) => {
-  const baseUrl =
-    import.meta.env.VITE_PUBLIC_SITE_URL || "http://localhost:5173";
+  const baseUrl = PUBLIC_SITE_URL;
   const normalizedReference = normalizeComplaintReference(reference);
   const url = new URL("/submit-complaint", baseUrl);
 

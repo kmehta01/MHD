@@ -22,6 +22,7 @@ const generalSettingDefinitions = [
   define("organization", "favicon", "", "file", { isPublic: true }),
   define("organization", "officialEmail", "", "email", { maxLength: 190, isPublic: true }),
   define("organization", "officialPhone", "", "string", { maxLength: 40, phone: true, isPublic: true }),
+  define("organization", "officialPhoneLabel", "24/7 Emergency & Social Services Hotline", "string", { required: true, maxLength: 120, isPublic: true }),
   define("organization", "websiteUrl", "", "url", { maxLength: 500, isPublic: true }),
   define("organization", "officeAddress", "", "string", { maxLength: 500, isPublic: true }),
   define("organization", "country", "Belize", "string", { required: true, maxLength: 100, isPublic: true }),

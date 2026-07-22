@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import useAdminBranding from "../hooks/useAdminBranding";
+import { INSTALLER_FALLBACK_BRANDING } from "../utils/branding";
+import { BACKEND_URL } from "../config/runtime-env";
 
-const defaultBackendUrl =
-  import.meta.env.VITE_BACKEND_URL || "http://localhost:5001";
+const defaultBackendUrl = BACKEND_URL;
 
 const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/g, "");
 
@@ -42,6 +44,11 @@ const Install = () => {
     () => trimTrailingSlash(form.backend_url),
     [form.backend_url],
   );
+  const branding = useAdminBranding({
+    backendUrl: installerBaseUrl,
+    fallback: INSTALLER_FALLBACK_BRANDING,
+    useStored: false,
+  });
 
   const handleChange = (event) => {
     const { name, type, checked, value } = event.target;
@@ -130,16 +137,17 @@ const Install = () => {
     <main className="install-page">
       <section className="install-panel">
         <div className="install-brand">
-          <img
-            alt="Ministry of Human Development, Family Support and Gender Affairs"
-            src="/assets/images/ministry-logo-footer.png"
-          />
+          {branding.logo ? (
+            <img alt={branding.organizationName || branding.portalName} src={branding.logo} />
+          ) : (
+            <strong className="install-brand-fallback">Application Installer</strong>
+          )}
         </div>
 
         <div className="install-header">
           <div>
             <p className="eyebrow">Administration setup</p>
-            <h1>MHD Belize Installer</h1>
+            <h1>{branding.portalName || "Application Installer"}</h1>
             <p>
               Configure backend, admin panel, database, security, and first
               Super Admin account.
@@ -198,7 +206,8 @@ const Install = () => {
               name="frontend_url"
               value={form.frontend_url}
               onChange={handleChange}
-              placeholder="Optional"
+              placeholder={form.node_env === "production" ? "Required for production" : "Optional; defaults to http://localhost:5173"}
+              required={form.node_env === "production"}
             />
           </Fieldset>
 

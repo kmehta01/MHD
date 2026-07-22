@@ -1,12 +1,12 @@
 import { useMemo, useState } from "react";
 import Icon from "../Icon";
+import { BACKEND_URL } from "../../config/runtime-env";
 
 const resolveAssetUrl = (path) => {
   if (!path) return "";
   if (/^(?:https?:|blob:|data:)/i.test(path)) return path;
-  const base = import.meta.env.VITE_BACKEND_URL || "http://localhost:5001";
   try {
-    return new URL(path, `${base.replace(/\/$/, "")}/`).toString();
+    return new URL(path, `${BACKEND_URL}/`).toString();
   } catch {
     return path;
   }

@@ -8,6 +8,8 @@ export const adminNavigation = [
   {
     name: "Grievance Management",
     icon: "grievances",
+    badgeKey: "newGrievances",
+    badgeAlert: true,
     children: [
       {
         name: "New Grievances",
@@ -111,6 +113,21 @@ export const adminNavigation = [
           "departments.manage",
           "departments.manage_limited",
         ],
+      },
+      {
+        name: "Public Directory",
+        path: "/department-management/public-directory",
+        permission: ["departments.manage", "departments.manage_limited"],
+      },
+      {
+        name: "Facilities",
+        path: "/department-management/facilities",
+        permission: ["departments.manage", "departments.manage_limited"],
+      },
+      {
+        name: "Social Links",
+        path: "/department-management/social-links",
+        permission: ["departments.manage", "departments.manage_limited"],
       },
     ],
   },

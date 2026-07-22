@@ -159,20 +159,20 @@ function Footer({ settings, t }) {
               </h2>
 
               <address>
-                <div className="site-footer__contact-item">
+                {branding.officeAddress || branding.country ? <div className="site-footer__contact-item">
                   <span>{t("address")}</span>
-                  <p>{[branding.officeAddress, branding.country].filter(Boolean).join(", ") || "Not provided"}</p>
-                </div>
+                  <p>{[branding.officeAddress, branding.country].filter(Boolean).join(", ")}</p>
+                </div> : null}
 
-                <div className="site-footer__contact-item">
+                {footer.supportPhone || branding.officialPhone ? <div className="site-footer__contact-item">
                   <span>Tel</span>
-                  {branding.officialPhone || footer.supportPhone ? <a className="glow-link" href={`tel:${(branding.officialPhone || footer.supportPhone).replace(/[^+\d]/g, "")}`}>{branding.officialPhone || footer.supportPhone}</a> : <p>Not provided</p>}
-                </div>
+                  <a className="glow-link" href={`tel:${(footer.supportPhone || branding.officialPhone).replace(/[^+\d]/g, "")}`}>{footer.supportPhone || branding.officialPhone}</a>
+                </div> : null}
 
-                <div className="site-footer__contact-item">
+                {footer.supportEmail || branding.officialEmail ? <div className="site-footer__contact-item">
                   <span>{t("email")}</span>
-                  {branding.officialEmail || footer.supportEmail ? <a className="glow-link" href={`mailto:${branding.officialEmail || footer.supportEmail}`}>{branding.officialEmail || footer.supportEmail}</a> : <p>Not provided</p>}
-                </div>
+                  <a className="glow-link" href={`mailto:${footer.supportEmail || branding.officialEmail}`}>{footer.supportEmail || branding.officialEmail}</a>
+                </div> : null}
                 {footer.helpdeskWorkingHours ? <div className="site-footer__contact-item"><span>{t("hours")}</span><p>{footer.helpdeskWorkingHours}</p></div> : null}
                 {branding.websiteUrl ? <div className="site-footer__contact-item"><span>Website</span><a className="glow-link" href={branding.websiteUrl} rel="noreferrer" target="_blank">{branding.websiteUrl}</a></div> : null}
               </address>
@@ -188,16 +188,10 @@ function Footer({ settings, t }) {
             <ul>
               {footer.userGuideUrl ? <li><a className="glow-link" href={footer.userGuideUrl} rel="noreferrer" target="_blank">User guide</a></li> : null}
               <li>
-                {footer.privacyPolicyUrl ? <a className="glow-link" href={footer.privacyPolicyUrl} rel="noreferrer" target="_blank">{t("privacyPolicy")}</a> : <span>{t("privacyPolicy")}</span>}
+                {footer.privacyPolicyUrl ? <a className="glow-link" href={footer.privacyPolicyUrl} rel="noreferrer" target="_blank">{t("privacyPolicy")}</a> : <Link className="glow-link" to="/privacy-policy">{t("privacyPolicy")}</Link>}
               </li>
               <li>
-                {footer.termsConditionsUrl ? <a className="glow-link" href={footer.termsConditionsUrl} rel="noreferrer" target="_blank">{t("terms")}</a> : <span>{t("terms")}</span>}
-              </li>
-              <li>
-                <a {...disabledGlowLinkProps}>{t("accessibility")}</a>
-              </li>
-              <li>
-                <a {...disabledGlowLinkProps}>{t("sitemap")}</a>
+                {footer.termsConditionsUrl ? <a className="glow-link" href={footer.termsConditionsUrl} rel="noreferrer" target="_blank">{t("terms")}</a> : <Link className="glow-link" to="/terms-and-conditions">{t("terms")}</Link>}
               </li>
             </ul>
           </div>

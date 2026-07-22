@@ -18,6 +18,7 @@
     "migrate:grievance-form-options": "node scripts/apply-grievance-form-options-migration.js",
     "migrate:attachment-policy": "node scripts/apply-attachment-policy-migration.js",
     "migrate:due-date-policy": "node scripts/apply-due-date-policy-migration.js",
+    "migrate:site-directory": "node scripts/apply-site-directory-migration.js",
     "migrate:all": "node scripts/migrate-all.js",
     "migrate:operational-runtime": "node scripts/apply-operational-runtime-migration.js",
     "migrate:ticket-number": "node scripts/apply-ticket-number-migration.js",

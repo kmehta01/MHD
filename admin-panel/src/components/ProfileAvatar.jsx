@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { BACKEND_URL } from "../config/runtime-env";
 
 const getInitials = (name = "") =>
   name
@@ -14,15 +15,8 @@ const resolveProfilePhotoUrl = (profilePhoto) => {
   if (!profilePhoto) return "";
   if (/^(?:https?:|data:|blob:)/i.test(profilePhoto)) return profilePhoto;
 
-  const apiBase =
-    import.meta.env.VITE_BACKEND_URL ||
-    (import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api").replace(
-      /\/api\/?$/,
-      "",
-    );
-
   try {
-    return new URL(profilePhoto, `${apiBase.replace(/\/$/, "")}/`).toString();
+    return new URL(profilePhoto, `${BACKEND_URL}/`).toString();
   } catch {
     return profilePhoto;
   }

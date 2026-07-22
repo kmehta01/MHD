@@ -12,6 +12,7 @@ const {
 } = require("../middlewares/rate-limit.middleware");
 const { getPublicSettings } = require("../controllers/public-settings.controller");
 const { getPublicCatalog } = require("../controllers/configuration.controller");
+const { getPublicDirectory } = require("../controllers/site-directory.controller");
 const {
   enforcePublicSubmission,
   enforcePublicTracking,
@@ -20,6 +21,7 @@ const {
 const router = express.Router();
 router.get("/settings", getPublicSettings);
 router.get("/catalog", getPublicCatalog);
+router.get("/site-directory", getPublicDirectory);
 router.post(
   "/complaints",
   publicComplaintSubmissionLimiter,

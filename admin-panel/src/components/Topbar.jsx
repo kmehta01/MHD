@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon from "./Icon";
 import ProfileAvatar from "./ProfileAvatar";
 import API from "../services/api";
-import { hasAnyPermission, isAdmin } from "../utils/permissions";
+import { getAdminUser, hasAnyPermission, isAdmin } from "../utils/permissions";
 import { findAdminNavigationItem } from "../config/adminNavigation";
 import { findSuperAdminNavigationItem } from "../config/superAdminNavigation";
 
@@ -64,9 +64,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const menusRef = useRef(null);
-  const [adminUser, setAdminUser] = useState(() =>
-    JSON.parse(localStorage.getItem("admin_user") || "null"),
-  );
+  const [adminUser, setAdminUser] = useState(getAdminUser);
   const name = adminUser?.name || "Administrator";
   const role = adminUser?.role_name || "Administrator";
   const canViewGrievances = hasAnyPermission([
@@ -109,7 +107,7 @@ const Topbar = ({ onLogout, onMenuClick }) => {
   useEffect(() => {
     const syncUser = (event) => {
       setAdminUser(
-        event.detail || JSON.parse(localStorage.getItem("admin_user") || "null"),
+        event.detail || getAdminUser(),
       );
     };
 

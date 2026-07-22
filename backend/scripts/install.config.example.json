@@ -2,7 +2,7 @@
   "backend_url": "http://localhost:5001",
   "backend_port": 5001,
   "admin_url": "http://localhost:5174",
-  "frontend_url": "",
+  "frontend_url": "http://localhost:5173",
   "db_host": "localhost",
   "db_name": "mhd_belize_db",
   "db_user": "root",

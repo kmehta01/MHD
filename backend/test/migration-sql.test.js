@@ -78,3 +78,16 @@ test("due-date migration backfills only null open dates through the central cale
   assert.match(source, /WHERE id=\? AND due_at IS NULL/);
   assert.doesNotMatch(source, /INTERVAL\s+10\s+DAY/i);
 });
+
+test("site-directory migration preserves existing contacts and immutable catalog keys", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "../scripts/apply-site-directory-migration.js"), "utf8");
+  for (const table of ["department_public_contacts", "public_facilities", "facility_public_contacts", "public_social_links"]) {
+    assert.match(source, new RegExp(`CREATE TABLE IF NOT EXISTS ${table}`));
+  }
+  assert.match(source, /ensureForeignKeys/);
+  assert.match(source, /unique_facility_key/);
+  assert.match(source, /unique_social_platform/);
+  assert.match(source, /golden_haven/);
+  assert.match(source, /senior\.secretary@humandev\.gov\.bz/);
+  assert.match(source, /ON DUPLICATE KEY UPDATE/);
+});

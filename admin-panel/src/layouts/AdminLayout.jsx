@@ -8,12 +8,19 @@ import {
   normalizeBranding,
   readStoredBranding,
 } from "../utils/branding";
+import { hasAnyPermission } from "../utils/permissions";
+import useNavigationCounts from "../hooks/useNavigationCounts";
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [, setSessionRevision] = useState(0);
   const [branding, setBranding] = useState(readStoredBranding);
+  const canViewGrievances = hasAnyPermission([
+    "grievances.view_all",
+    "grievances.view_department",
+  ]);
+  const navigationCounts = useNavigationCounts(canViewGrievances);
 
   const logout = async () => {
     try {
@@ -61,8 +68,8 @@ const AdminLayout = () => {
 
   useEffect(() => {
     let active = true;
-    const acceptBranding = (organization) => {
-      const next = normalizeBranding(organization);
+    const acceptBranding = (settings) => {
+      const next = normalizeBranding(settings);
       if (!active) return;
       setBranding(next);
       localStorage.setItem("admin_branding", JSON.stringify(next));
@@ -72,7 +79,7 @@ const AdminLayout = () => {
 
     applyDocumentBranding(readStoredBranding());
     API.get("/settings/general")
-      .then((response) => acceptBranding(response.data.data?.organization || {}))
+      .then((response) => acceptBranding(response.data.data || {}))
       .catch(() => {
         // Retain the saved/default brand if settings are temporarily unavailable.
       });
@@ -88,6 +95,7 @@ const AdminLayout = () => {
       <Sidebar
         branding={branding}
         isOpen={isSidebarOpen}
+        navigationCounts={navigationCounts}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={logout}
       />
@@ -96,7 +104,7 @@ const AdminLayout = () => {
         <Topbar onLogout={logout} onMenuClick={() => setIsSidebarOpen(true)} />
 
         <main className="admin-content">
-          <Outlet />
+          <Outlet context={{ branding }} />
         </main>
       </div>
     </div>

@@ -6672,6 +6672,15 @@
   height: auto;
 }
 
+.install-brand-fallback {
+  display: block;
+  padding: 14px 8px;
+  color: var(--brand-navy);
+  font-family: var(--font-heading);
+  font-size: 20px;
+  text-align: center;
+}
+
 .install-header {
   display: flex;
   align-items: flex-start;

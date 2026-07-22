@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import API from "../services/api";
+import { BACKEND_URL, PUBLIC_SITE_URL } from "../config/runtime-env";
 
 const emptyCatalog = { code: "", name: "", isActive: true };
 const emptyHoliday = { date: "", name: "", isActive: true };
@@ -9,6 +10,19 @@ const emptyRule = { name: "", matchType: "category", matchValue: "", departmentI
 const emptyStatus = { key: "", name: "", reportingGroup: "open", notificationEvent: "status_change", isFinal: false, isActive: true, sortOrder: 100 };
 const emptyPriority = { key: "", name: "", isHighPriority: false, isActive: true, sortOrder: 100 };
 const emptyFormOption = { group: "assistance", key: "", label: "", helpText: "", contactRequirement: "none", sortOrder: 100, isActive: true };
+const emptyDepartmentProfile = { id: "", name: "", address: "", summary: "", iconKey: "building", sortOrder: 100, isVisible: false };
+const emptyFacility = { key: "", departmentId: "", name: "", description: "", address: "", sortOrder: 100, isActive: true };
+const emptyContact = { ownerType: "department", ownerId: "", key: "", type: "phone", label: "Telephone", displayValue: "", linkValue: "", sortOrder: 100, isActive: true };
+const emptySocialLink = { platformKey: "facebook", label: "Facebook", url: "", sortOrder: 100, isActive: false };
+
+const directoryImageUrl = (path) => {
+  if (!path) return "";
+  if (/^https:\/\//i.test(path)) return path;
+  if (path.startsWith("/uploads/")) {
+    return `${BACKEND_URL}${path}`;
+  }
+  return `${PUBLIC_SITE_URL}${path}`;
+};
 
 const formOptionGroups = [
   { value: "assistance", label: "Assistance" },
@@ -29,16 +43,24 @@ const RuntimeConfiguration = () => {
   const [priorityForm, setPriorityForm] = useState(emptyPriority);
   const [formOptionForm, setFormOptionForm] = useState(emptyFormOption);
   const [formOptionFilter, setFormOptionFilter] = useState("all");
+  const [departmentProfileForm, setDepartmentProfileForm] = useState(emptyDepartmentProfile);
+  const [facilityForm, setFacilityForm] = useState(emptyFacility);
+  const [contactForm, setContactForm] = useState(emptyContact);
+  const [socialForm, setSocialForm] = useState(emptySocialLink);
   const [preview, setPreview] = useState([]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
+    const needsDirectory = ["public-directory", "facilities", "social-links"].includes(mode);
     const requests = [API.get("/configuration")];
+    if (needsDirectory) requests.push(API.get("/configuration/site-directory"));
     if (mode === "notification-templates") requests.push(API.get("/notifications/templates/all"));
     const responses = await Promise.all(requests);
-    setData(responses[0].data.data);
-    if (responses[1]) setTemplates(responses[1].data.data || []);
+    let responseIndex = 1;
+    const directory = needsDirectory ? responses[responseIndex++].data.data : undefined;
+    setData({ ...responses[0].data.data, ...(directory ? { siteDirectory: directory } : {}) });
+    if (mode === "notification-templates") setTemplates(responses[responseIndex]?.data.data || []);
   }, [mode]);
 
   useEffect(() => {
@@ -100,8 +122,39 @@ const RuntimeConfiguration = () => {
     );
     setFormOptionForm(emptyFormOption);
   };
+  const saveDepartmentProfile = (event) => {
+    event.preventDefault();
+    execute(() => API.put(`/configuration/site-directory/departments/${departmentProfileForm.id}`, departmentProfileForm), "Public department profile saved.");
+    setDepartmentProfileForm(emptyDepartmentProfile);
+  };
+  const saveFacility = (event) => {
+    event.preventDefault();
+    const endpoint = `/configuration/site-directory/facilities${facilityForm.id ? `/${facilityForm.id}` : ""}`;
+    execute(() => facilityForm.id ? API.put(endpoint, facilityForm) : API.post(endpoint, facilityForm), "Facility saved.");
+    setFacilityForm(emptyFacility);
+  };
+  const saveContact = (event) => {
+    event.preventDefault();
+    const base = `/configuration/site-directory/${contactForm.ownerType}/${contactForm.ownerId}/contacts`;
+    execute(() => contactForm.id ? API.put(`${base}/${contactForm.id}`, contactForm) : API.post(base, contactForm), "Contact method saved.");
+    setContactForm(emptyContact);
+  };
+  const saveSocialLink = (event) => {
+    event.preventDefault();
+    const endpoint = `/configuration/site-directory/social-links${socialForm.id ? `/${socialForm.id}` : ""}`;
+    execute(() => socialForm.id ? API.put(endpoint, socialForm) : API.post(endpoint, socialForm), "Social link saved.");
+    setSocialForm(emptySocialLink);
+  };
+  const uploadFacilityImage = (facilityId, file) => {
+    const payload = new FormData();
+    payload.append("image", file);
+    execute(() => API.post(`/configuration/site-directory/facilities/${facilityId}/image`, payload), "Facility image updated.");
+  };
 
-  if (!data) return <div className="panel module-loading">Loading runtime configuration…</div>;
+  const directoryMode = ["public-directory", "facilities", "social-links"].includes(mode);
+  if (!data || (directoryMode && !data.siteDirectory)) {
+    return <div className="panel module-loading">Loading runtime configuration…</div>;
+  }
 
   const catalogMode = ["complaint-categories", "locations", "departments"].includes(mode);
   const ruleMatchOptions = ruleForm.matchType === "category" ? data.categories
@@ -114,6 +167,72 @@ const RuntimeConfiguration = () => {
     <div className="runtime-config-page">
       <div className="module-page-header"><div><p className="profile-eyebrow">Runtime policy data</p><h1>{mode.split("-").map((word) => word[0]?.toUpperCase() + word.slice(1)).join(" ")}</h1><p>Changes are consumed by grievance runtime services without embedding business defaults in code.</p></div></div>
       {message ? <div className="grievance-error" role="status">{message}</div> : null}
+
+      {mode === "public-directory" ? <>
+        {departmentProfileForm.id ? <form className="panel runtime-config-form" onSubmit={saveDepartmentProfile}>
+          <input maxLength="160" onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, name: event.target.value }))} placeholder="Public department name" value={departmentProfileForm.name} />
+          <textarea maxLength="500" onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, address: event.target.value }))} placeholder="Public address" value={departmentProfileForm.address || ""} />
+          <textarea maxLength="5000" onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, summary: event.target.value }))} placeholder="Public summary" value={departmentProfileForm.summary || ""} />
+          <select onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, iconKey: event.target.value }))} value={departmentProfileForm.iconKey || "building"}>{data.siteDirectory.capabilities.directoryIcons.map((icon) => <option key={icon.key} value={icon.key}>{icon.key.replaceAll("_", " ")}</option>)}</select>
+          <input min="0" onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={departmentProfileForm.sortOrder} />
+          <label><input checked={departmentProfileForm.isVisible} onChange={(event) => setDepartmentProfileForm((item) => ({ ...item, isVisible: event.target.checked }))} type="checkbox" /> Show in public directory</label>
+          <button className="button button-primary" disabled={busy}>Save public profile</button>
+          <button className="button button-secondary" onClick={() => setDepartmentProfileForm(emptyDepartmentProfile)} type="button">Cancel</button>
+        </form> : null}
+        <section className="panel runtime-config-list"><h2>Public department profiles</h2>{data.siteDirectory.departments.map((department) => <div className="notification-template-editor" key={department.id}>
+          <div className="runtime-config-row"><span><strong>{department.name || department.operationalName}</strong><small>{department.code} · {department.isVisible ? "Public" : "Hidden"} · order {department.sortOrder}</small><small>{department.address || "No public address"}</small></span><div><button onClick={() => setDepartmentProfileForm({ id: department.id, name: department.name || "", address: department.address || "", summary: department.summary || "", iconKey: department.iconKey || "building", sortOrder: department.sortOrder, isVisible: department.isVisible })} type="button">Edit profile</button><button onClick={() => setContactForm({ ...emptyContact, ownerType: "department", ownerId: department.id })} type="button">Add contact</button></div></div>
+          {department.contacts.map((contact) => <div className="runtime-config-row" key={contact.id}><span><strong>{contact.label}: {contact.displayValue}</strong><small>{contact.type} · order {contact.sortOrder} · {contact.isActive ? "Active" : "Inactive"}</small></span><button onClick={() => setContactForm({ ...contact, ownerType: "department", ownerId: department.id })} type="button">Edit</button></div>)}
+        </div>)}</section>
+        {contactForm.ownerType === "department" && contactForm.ownerId ? <form className="panel runtime-config-form" onSubmit={saveContact}>
+          <input disabled={Boolean(contactForm.id)} onChange={(event) => setContactForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable contact key" required value={contactForm.key || ""} />
+          <select onChange={(event) => setContactForm((item) => ({ ...item, type: event.target.value }))} value={contactForm.type}><option value="phone">Phone</option><option value="email">Email</option></select>
+          <input onChange={(event) => setContactForm((item) => ({ ...item, label: event.target.value }))} placeholder="Label" required value={contactForm.label} />
+          <input onChange={(event) => setContactForm((item) => ({ ...item, displayValue: event.target.value }))} placeholder="Displayed value" required value={contactForm.displayValue} />
+          <input onChange={(event) => setContactForm((item) => ({ ...item, linkValue: event.target.value }))} placeholder="Link value: +501... or email" required value={contactForm.linkValue} />
+          <input min="0" onChange={(event) => setContactForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={contactForm.sortOrder} />
+          <label><input checked={contactForm.isActive} onChange={(event) => setContactForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save contact</button><button onClick={() => setContactForm(emptyContact)} type="button">Cancel</button>
+        </form> : null}
+      </> : null}
+
+      {mode === "facilities" ? <>
+        <form className="panel runtime-config-form" onSubmit={saveFacility}>
+          <input disabled={Boolean(facilityForm.id)} onChange={(event) => setFacilityForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable facility key" required value={facilityForm.key} />
+          <input onChange={(event) => setFacilityForm((item) => ({ ...item, name: event.target.value }))} placeholder="Facility name" required value={facilityForm.name} />
+          <select onChange={(event) => setFacilityForm((item) => ({ ...item, departmentId: event.target.value }))} value={facilityForm.departmentId || ""}><option value="">No parent department</option>{data.departments.map((department) => <option key={department.id} value={department.id}>{department.name}</option>)}</select>
+          <textarea onChange={(event) => setFacilityForm((item) => ({ ...item, description: event.target.value }))} placeholder="Description" value={facilityForm.description || ""} />
+          <textarea onChange={(event) => setFacilityForm((item) => ({ ...item, address: event.target.value }))} placeholder="Address" value={facilityForm.address || ""} />
+          <input min="0" onChange={(event) => setFacilityForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={facilityForm.sortOrder} />
+          <label><input checked={facilityForm.isActive} onChange={(event) => setFacilityForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save facility</button>{facilityForm.id ? <button onClick={() => setFacilityForm(emptyFacility)} type="button">Cancel</button> : null}
+        </form>
+        <section className="panel runtime-config-list"><h2>Facilities and centres</h2>{data.siteDirectory.facilities.map((facility) => <div className="notification-template-editor" key={facility.id}>
+          <div className="runtime-config-row"><span>{facility.imagePath ? <img alt="" src={directoryImageUrl(facility.imagePath)} style={{ height: 48, width: 72, objectFit: "cover" }} /> : null}<strong>{facility.name}</strong><small>{facility.key} · order {facility.sortOrder} · {facility.isActive ? "Active" : "Inactive"}</small><small>{facility.address || "No address"}</small></span><div><button onClick={() => setFacilityForm({ id: facility.id, key: facility.key, departmentId: facility.departmentId || "", name: facility.name, description: facility.description || "", address: facility.address || "", sortOrder: facility.sortOrder, isActive: facility.isActive })} type="button">Edit</button><button onClick={() => setContactForm({ ...emptyContact, ownerType: "facility", ownerId: facility.id })} type="button">Add contact</button><label className="button button-secondary">Replace image<input accept=".jpg,.jpeg,.png,.webp" hidden onChange={(event) => event.target.files?.[0] && uploadFacilityImage(facility.id, event.target.files[0])} type="file" /></label></div></div>
+          {facility.contacts.map((contact) => <div className="runtime-config-row" key={contact.id}><span><strong>{contact.label}: {contact.displayValue}</strong><small>{contact.type} · {contact.isActive ? "Active" : "Inactive"}</small></span><button onClick={() => setContactForm({ ...contact, ownerType: "facility", ownerId: facility.id })} type="button">Edit</button></div>)}
+        </div>)}</section>
+        {contactForm.ownerType === "facility" && contactForm.ownerId ? <form className="panel runtime-config-form" onSubmit={saveContact}>
+          <input disabled={Boolean(contactForm.id)} onChange={(event) => setContactForm((item) => ({ ...item, key: event.target.value }))} placeholder="Immutable contact key" required value={contactForm.key || ""} />
+          <select onChange={(event) => setContactForm((item) => ({ ...item, type: event.target.value }))} value={contactForm.type}><option value="phone">Phone</option><option value="email">Email</option></select>
+          <input onChange={(event) => setContactForm((item) => ({ ...item, label: event.target.value }))} placeholder="Label" required value={contactForm.label} />
+          <input onChange={(event) => setContactForm((item) => ({ ...item, displayValue: event.target.value }))} placeholder="Displayed value" required value={contactForm.displayValue} />
+          <input onChange={(event) => setContactForm((item) => ({ ...item, linkValue: event.target.value }))} placeholder="Link value" required value={contactForm.linkValue} />
+          <input min="0" onChange={(event) => setContactForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={contactForm.sortOrder} />
+          <label><input checked={contactForm.isActive} onChange={(event) => setContactForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save contact</button><button onClick={() => setContactForm(emptyContact)} type="button">Cancel</button>
+        </form> : null}
+      </> : null}
+
+      {mode === "social-links" ? <>
+        <form className="panel runtime-config-form" onSubmit={saveSocialLink}>
+          <select disabled={Boolean(socialForm.id)} onChange={(event) => { const platform = data.siteDirectory.capabilities.socialPlatforms.find((item) => item.key === event.target.value); setSocialForm((item) => ({ ...item, platformKey: event.target.value, label: platform?.label || item.label })); }} value={socialForm.platformKey}>{data.siteDirectory.capabilities.socialPlatforms.map((platform) => <option key={platform.key} value={platform.key}>{platform.label}</option>)}</select>
+          <input onChange={(event) => setSocialForm((item) => ({ ...item, label: event.target.value }))} placeholder="Display label" required value={socialForm.label} />
+          <input onChange={(event) => setSocialForm((item) => ({ ...item, url: event.target.value }))} placeholder="https://..." type="url" value={socialForm.url || ""} />
+          <input min="0" onChange={(event) => setSocialForm((item) => ({ ...item, sortOrder: Number(event.target.value) }))} type="number" value={socialForm.sortOrder} />
+          <label><input checked={socialForm.isActive} onChange={(event) => setSocialForm((item) => ({ ...item, isActive: event.target.checked }))} type="checkbox" /> Active</label>
+          <button className="button button-primary" disabled={busy}>Save social link</button>{socialForm.id ? <button onClick={() => setSocialForm(emptySocialLink)} type="button">Cancel</button> : null}
+        </form>
+        <section className="panel runtime-config-list"><h2>Supported social links</h2>{data.siteDirectory.socialLinks.map((link) => <div className="runtime-config-row" key={link.id}><span><strong>{link.label}</strong><small>{link.platformKey} · order {link.sortOrder} · {link.isActive ? "Active" : "Inactive"}</small><small>{link.url || "No URL configured"}</small></span><button onClick={() => setSocialForm({ id: link.id, platformKey: link.platformKey, label: link.label, url: link.url || "", sortOrder: link.sortOrder, isActive: link.isActive })} type="button">Edit</button></div>)}</section>
+      </> : null}
 
       {catalogMode ? <>
         <form className="panel runtime-config-form" onSubmit={saveCatalog}>

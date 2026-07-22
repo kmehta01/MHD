@@ -10,7 +10,7 @@ const clone = (value) => JSON.parse(JSON.stringify(value));
 const publishBranding = (settings) => {
   if (!settings?.organization) return;
   window.dispatchEvent(new CustomEvent("general-settings-branding-updated", {
-    detail: settings.organization,
+    detail: settings,
   }));
 };
 

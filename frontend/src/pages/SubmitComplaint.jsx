@@ -5,9 +5,7 @@ import RecaptchaCheckbox from "../components/RecaptchaCheckbox";
 import { formatPortalDateTime } from "../utils/date-format";
 import { hasRequiredGrievanceFormOptions, normalizeGrievanceFormOptions, reconcileGrievanceFormSelections } from "../utils/grievanceFormOptions";
 import { buildAttachmentPolicy } from "../utils/attachmentPolicy";
-
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:5001/api";
+import { API_BASE_URL } from "../config/runtime-env";
 
 const stepDefinitions = [
   { key: "stepSubmission", caption: "A & B" },

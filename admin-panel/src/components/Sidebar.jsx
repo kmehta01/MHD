@@ -8,6 +8,7 @@ import {
 } from "../utils/permissions";
 import { adminNavigation } from "../config/adminNavigation";
 import { superAdminNavigation } from "../config/superAdminNavigation";
+import { formatNavigationBadge } from "../utils/adminPresentation";
 
 const menuGroups = [
   {
@@ -28,14 +29,13 @@ const menuGroups = [
         name: "Applications",
         path: "/applications",
         icon: "applications",
-        count: 12,
         permission: "applications.view",
       },
       {
         name: "Grievances",
         path: "/grievances",
         icon: "grievances",
-        count: 5,
+        badgeKey: "newGrievances",
         alert: true,
         permission: [
           "grievances.view_all",
@@ -156,7 +156,7 @@ const filterNavigationByPermissions = (navigation) =>
     })
     .filter(Boolean);
 
-const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
+const Sidebar = ({ branding, isOpen, navigationCounts = {}, onClose, onLogout }) => {
   const location = useLocation();
   const superAdmin = isSuperAdmin();
   const admin = isAdmin();
@@ -237,6 +237,7 @@ const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
             {roleNavigation ? (
               <div className="role-navigation">
                 {roleNavigation.map((item) => {
+                  const badge = formatNavigationBadge(navigationCounts[item.badgeKey]);
                   if (!item.children) {
                     return (
                       <NavLink
@@ -252,6 +253,7 @@ const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
                           <Icon name={item.icon} size={19} />
                         </span>
                         <span>{item.name}</span>
+                        {badge ? <span className={`nav-count ${item.badgeAlert ? "alert" : ""}`}>{badge}</span> : null}
                       </NavLink>
                     );
                   }
@@ -280,6 +282,7 @@ const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
                           <Icon name={item.icon} size={19} />
                         </span>
                         <span>{item.name}</span>
+                        {badge ? <span className={`nav-count ${item.badgeAlert ? "alert" : ""}`}>{badge}</span> : null}
                         <Icon
                           className="nav-section-chevron"
                           name="chevronDown"
@@ -328,7 +331,9 @@ const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
                 <div className="nav-group" key={group.label}>
                   <p className="nav-group-label">{group.label}</p>
 
-                  {group.items.map((item) =>
+                  {group.items.map((item) => {
+                    const badge = formatNavigationBadge(navigationCounts[item.badgeKey]);
+                    return (
                     item.action === "logout" ? (
                       <button
                         className="nav-link nav-action-link"
@@ -356,18 +361,18 @@ const Sidebar = ({ branding, isOpen, onClose, onLogout }) => {
 
                         <span>{item.name}</span>
 
-                        {item.count ? (
+                        {badge ? (
                           <span
                             className={`nav-count ${
                               item.alert ? "alert" : ""
                             }`}
                           >
-                            {item.count}
+                            {badge}
                           </span>
                         ) : null}
                       </NavLink>
-                    ),
-                  )}
+                    ));
+                  })}
                 </div>
               ))
             )}

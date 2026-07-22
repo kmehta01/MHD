@@ -3,7 +3,7 @@ import { Outlet } from "react-router-dom";
 import Header from "./Header";
 import Footer from "./Footer";
 import { createTranslator } from "../i18n/resources";
-import { applyPublicDocumentBranding, PUBLIC_SETTINGS_URL, resolveBrandingAsset } from "../utils/branding";
+import { applyPublicDocumentBranding, PUBLIC_DIRECTORY_URL, PUBLIC_SETTINGS_URL, resolveBrandingAsset } from "../utils/branding";
 
 function Layout() {
   const [portal, setPortal] = useState({ settings: null, meta: null, loading: true, error: "" });
@@ -11,19 +11,23 @@ function Layout() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch(PUBLIC_SETTINGS_URL, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) throw new Error("Unable to load portal settings");
-        return response.json();
+    Promise.all([
+      fetch(PUBLIC_SETTINGS_URL, { signal: controller.signal }),
+      fetch(PUBLIC_DIRECTORY_URL, { signal: controller.signal }),
+    ])
+      .then(async ([settingsResponse, directoryResponse]) => {
+        if (!settingsResponse.ok) throw new Error("Unable to load portal settings");
+        if (!directoryResponse.ok) throw new Error("Unable to load public directory");
+        return [await settingsResponse.json(), await directoryResponse.json()];
       })
-      .then((response) => {
+      .then(([response, directoryResponse]) => {
         const settings = response.data;
         const organization = settings?.organization || {};
         const normalized = {
           ...settings,
           organization: { ...organization, logo: resolveBrandingAsset(organization.logo) },
         };
-        setPortal({ settings: normalized, meta: response.meta || {}, loading: false, error: "" });
+        setPortal({ settings: normalized, siteDirectory: directoryResponse.data, meta: response.meta || {}, loading: false, error: "" });
         setLanguage((current) => current || settings?.portal?.defaultLanguage || "English");
         applyPublicDocumentBranding({
           ...organization,
@@ -51,7 +55,7 @@ function Layout() {
 
   return (
     <>
-      <Header branding={branding} language={language} onLanguageChange={changeLanguage} settings={portal.settings} t={t} />
+      <Header branding={branding} language={language} onLanguageChange={changeLanguage} settings={portal.settings} socialLinks={portal.siteDirectory?.socialLinks || []} t={t} />
       {maintenance ? (
         <main className="portal-state portal-state--maintenance">
           <i className="fa-solid fa-screwdriver-wrench" />

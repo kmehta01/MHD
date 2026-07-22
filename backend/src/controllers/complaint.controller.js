@@ -264,6 +264,38 @@ const getComplaints = async (req, res) => {
   }
 };
 
+const getNavigationCounts = async (req, res) => {
+  try {
+    const scope = getGrievanceScope(req.user);
+    if (scope.type === "none") {
+      return res.status(403).json({
+        status: false,
+        message: "A department assignment is required to view grievance counts",
+      });
+    }
+
+    const newGrievances = await ComplaintModel.countByStatusKey({
+      statusKey: "new",
+      scope,
+    });
+
+    return res.json({
+      status: true,
+      data: { newGrievances },
+      meta: {
+        scope: scope.type,
+        generatedAt: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      message: "Failed to load navigation counts",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined,
+    });
+  }
+};
+
 const getComplaintNotifications = async (req, res) => {
   try {
     const scope = getGrievanceScope(req.user);
@@ -482,4 +514,5 @@ module.exports = {
   getComplaintNotifications,
   getComplaintOptions,
   getComplaints,
+  getNavigationCounts,
 };

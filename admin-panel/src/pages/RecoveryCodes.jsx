@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import Icon from "../components/Icon";
+import useAdminBranding from "../hooks/useAdminBranding";
 
 const RecoveryCodes = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const branding = useAdminBranding();
   const [recoveryCodes] = useState(
     () => location.state?.recoveryCodes || [],
   );
@@ -32,8 +34,8 @@ const RecoveryCodes = () => {
       <section className="recovery-card">
         <div className="recovery-logo-shell">
           <img
-            alt="Ministry of Human Development, Family Support and Gender Affairs"
-            src="/assets/images/ministry-logo-footer.png"
+            alt={branding.organizationName || branding.portalName}
+            src={branding.logo}
           />
         </div>
         <span className="recovery-icon">

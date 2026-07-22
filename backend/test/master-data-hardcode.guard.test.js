@@ -53,3 +53,61 @@ test("runtime and migration sources contain no legacy fixed due-date fallback", 
     .map((file) => path.relative(path.resolve(__dirname, "../.."), file)));
   assert.deepEqual(violations, []);
 });
+
+test("public contact components contain no fixed contact or copyright values", () => {
+  const files = [
+    path.resolve(__dirname, "../../frontend/src/components/Header.jsx"),
+    path.resolve(__dirname, "../../frontend/src/components/Footer.jsx"),
+    path.resolve(__dirname, "../../frontend/src/pages/Departments.jsx"),
+  ];
+  const forbidden = [
+    /(?:tel:|mailto:)(?:\+?\d|[A-Za-z0-9._%+-]+@)/i,
+    /[A-Za-z0-9._%+-]+@(?:humandev\.gov\.bz|gmail\.com)/i,
+    /©\s*20\d{2}/,
+    /TMedia Business Solution/i,
+    /https:\/\/(?:www\.)?(?:facebook|instagram|youtube|x|twitter)\.com/i,
+  ];
+  const violations = files.filter((file) => forbidden.some((pattern) => pattern.test(fs.readFileSync(file, "utf8"))));
+  assert.deepEqual(violations, []);
+});
+
+test("unauthenticated admin pages contain no fixed organization branding", () => {
+  const files = ["Login.jsx", "RecoveryCodes.jsx", "Install.jsx"]
+    .map((file) => path.resolve(__dirname, `../../admin-panel/src/pages/${file}`));
+  const forbidden = [
+    /Ministry of Human Development/i,
+    /ministry-logo-footer\.png/i,
+    /Government of Belize/i,
+    /MHD Belize Installer/i,
+    /(?:©|&copy;)\s*20\d{2}/i,
+  ];
+  const violations = files.filter((file) => forbidden.some((pattern) => pattern.test(fs.readFileSync(file, "utf8"))));
+  assert.deepEqual(violations, []);
+});
+
+test("admin identity and navigation contain no fabricated runtime values", () => {
+  const files = ["Topbar.jsx", "Sidebar.jsx", "../pages/Dashboard.jsx"]
+    .map((file) => path.resolve(__dirname, `../../admin-panel/src/components/${file}`));
+  const forbidden = [
+    /Marisol Young/i,
+    /MHD Belize/i,
+    /\bcount\s*:\s*(?:12|5)\b/,
+  ];
+  const violations = files.filter((file) => forbidden.some((pattern) => pattern.test(fs.readFileSync(file, "utf8"))));
+  assert.deepEqual(violations, []);
+});
+
+test("client runtime URLs are centralized outside development configuration", () => {
+  const roots = [
+    path.resolve(__dirname, "../../admin-panel/src"),
+    path.resolve(__dirname, "../../frontend/src"),
+  ];
+  const violations = roots.flatMap((root) => walk(root)
+    .filter((file) => /\.[jt]sx?$/.test(file))
+    .filter((file) => !file.endsWith(`${path.sep}config${path.sep}runtime-env.js`))
+    .filter((file) => !/\.test\.[jt]sx?$/.test(file))
+    .filter((file) => path.basename(file) !== "Install.jsx")
+    .filter((file) => /import\.meta\.env\.VITE_|https?:\/\/(?:localhost|127\.0\.0\.1)/i.test(fs.readFileSync(file, "utf8")))
+    .map((file) => path.relative(path.resolve(__dirname, "../.."), file)));
+  assert.deepEqual(violations, []);
+});
